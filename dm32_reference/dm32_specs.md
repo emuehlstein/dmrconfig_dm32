@@ -29,3 +29,12 @@ Notes (OEM CPS observed limits):
 
 - RX Group Lists: up to 32
 - Canned Messages: up to 20
+
+---
+
+## Memory mapping status (tooling)
+
+- Read-only mapping; no writes performed. Program mode entry mirrors CPS but we only issue 0x52 reads.
+- Known channel window: base 0x00601C, stride 0x30; current parser scans first 240 slots (~11.5 KiB).
+- Frequency encoding: 8-digit BCD for RX/TX at signature start; parameters at s+8 (16 bytes). Alternative alignment at s+4 is also handled.
+- Safe read pages: small, conservative 4 KiB reads around 0x008000 and 0x009000 added to avoid radio freezes when extending existing blocks.

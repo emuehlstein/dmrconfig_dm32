@@ -6,7 +6,7 @@ This document summarizes the current understanding of the DM‑32 channel slot s
 
 
 - Channel slots appear in a fixed window starting at 0x00601C with a stride of 0x30 (48) bytes per slot.
-- In the current tool, we conservatively scan the first 128 slots: offset = 0x00601C + 0x30 * slot.
+- In the current tool, we scan the first 240 slots: offset = 0x00601C + 0x30 * slot.
 - DM‑32 advertises up to 4,000 channels; additional banks beyond this first window are not mapped yet.
 
 ## Slot structure (high level)
@@ -14,7 +14,7 @@ This document summarizes the current understanding of the DM‑32 channel slot s
 Within each 0x30‑byte slot:
 
 - Label area: printable ASCII channel label, terminated by a 0x00 byte.
-- Optional padding: 0–8 bytes of 0xFF after the label terminator.
+- Optional padding: 0–16 bytes of 0xFF or 0x00 after the label terminator.
 - Signature + data area: a recognizable byte pattern marks the start of frequency/params. We refer to this start as s.
 
 Observed post‑label signature patterns:
@@ -22,7 +22,7 @@ Observed post‑label signature patterns:
 - Pattern A: 50 87 ?? 44 50 87 ?? 44
 - Pattern B: 25 ?? 44 [00]? 25 ?? 44
 
-The first 8 bytes at s encode RX/TX frequencies; the next 16 bytes (s+8..s+23) act as a parameter block.
+The first 8 bytes at s encode RX/TX frequencies; the next 16 bytes (s+8..s+23) act as a parameter block. In some images a 4‑byte pad causes an alternate alignment; the tool evaluates both s and s+4 and selects the better‑scoring candidate.
 
 ## Frequency encoding
 
@@ -31,6 +31,8 @@ The first 8 bytes at s encode RX/TX frequencies; the next 16 bytes (s+8..s+23) a
 - TX frequency: 4‑byte little‑endian BCD at s+4..s+7
 - Each nibble represents a decimal digit; the 8 digits form a value in 10 Hz units. Example: digits “4 4 3 5 8 7 5 0” → 443.58750 MHz.
 - A float32 value sometimes exists at the same location but is not relied upon; BCD is the authoritative signal.
+- Robust decode: try both BCD nibble orders; pick the one that scores better for ham bands (≈144/430 MHz) and 12.5 kHz step alignment.
+- Sanity: for TX, fall back to RX if out‑of‑band or if |TX−RX| > ~10 MHz.
 
 ## Parameter block (16 bytes at s+8..s+23)
 
@@ -38,18 +40,20 @@ Indexing below is zero‑based within the 16‑byte params region (params[0] == 
 
 Known/validated fields:
 
-- params[0] (s+8): TX power
-  - Bit 0x04 set → High; cleared → Low (confirmed by on‑radio change of a channel to Low).
-  - Other bits observed: 0x10, 0x1C, 0x40 in some slots; semantics TBD.
+- params[0] (s+8): TX power and mode lead‑in
+  - Digital‑like records start with 14 00 00 00
+  - Analog‑like records start with 04 80 00 00
+  - Bit 0x04 set → High; cleared → Low (confirmed on‑radio). Applies to both modes.
 - params[5] (s+13): Timeslot and Color Code
   - Timeslot: bit 0x10 set → Slot 2; cleared → Slot 1.
   - Color Code: lower nibble appears to equal the programmed CC (e.g., 0x01 → CC1; 0x03 → CC3). Verified via a channel updated to CC=3.
-- params[7] (s+15): Mode/flag bit
+- params[7] (s+15): Monitor/flag bit
   - Observed 0x80 on normal channels; 0x81 on “Monitor TSx” channels. Hypothesis: bit 0 indicates a “monitor”/special receive behavior; exact meaning TBD.
 
 Common constants/unexplained bytes (stable across many channels; mapping in progress):
 
 - params[1]..[4] often: 00 0B 20 20 or 00 1B 20 20
+- In digital records, params[4] is frequently 0x30 or 0x34 and params[5] often equals 0x01.
 - params[6] typically 00
 - params[8] typically 00
 - params[9]..[12] typically FF FF FF FF (filler)
@@ -69,8 +73,8 @@ Common constants/unexplained bytes (stable across many channels; mapping in prog
 
 ## Label and signature alignment details
 
-- After the NUL terminator, slots may include up to 8 bytes of 0xFF pad.
-- Some slots contain extra ASCII metadata between label and signature. A forward scan up to +16 bytes reliably finds the signature start s.
+- After the NUL terminator, slots may include up to 16 bytes of pad consisting of 0xFF and/or 0x00.
+- Some slots contain extra ASCII metadata between label and signature. A forward scan up to +32 bytes reliably finds the signature start s; the tool also evaluates an alternative alignment at s+4.
 - Frequencies and params are always interpreted relative to s.
 
 ## Outliers and cautions
@@ -88,6 +92,7 @@ Common constants/unexplained bytes (stable across many channels; mapping in prog
 ## Safety notes
 
 - All decoding is read‑only; the tool enters program mode but never writes. Handshakes avoid generic identify on CH340/CP210x to prevent reboots.
+- Reader uses mapped read blocks from `dm32-map.h` plus conservative 4 KiB pages (e.g., 0x008000, 0x009000). Avoid enlarging existing blocks; add new small pages instead to prevent radio freezes.
 
 ## Pointers to artifacts
 
