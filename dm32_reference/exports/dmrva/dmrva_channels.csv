@@ -1,0 +1,129 @@
+No.,Channel Name,Channel Type,RX Frequency[MHz],TX Frequency[MHz],Power,Band Width,Scan List,TX Admit,Emergency System,Squelch Level,APRS Report Type,Forbid TX,APRS Receive,Forbid Talkaround,Auto Scan,Lone Work,Emergency Indicator,Emergency ACK,Analog APRS PTT Mode,Digital APRS PTT Mode,TX Contact,RX Group List,Color Code,Time Slot,Encryption,Encryption ID,APRS Report Channel,Direct Dual Mode,Private Confirm,Short Data Confirm,DMR ID,CTC/DCS Decode,CTC/DCS Encode,Scramble,RX Squelch Mode,Signaling Type,PTT ID,VOX Function,PTT ID Display
+1,RIC RVA Metro,Digital,443.58750,448.58750,High,12.5KHz,None,Always,None,2,Off,0,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+2,RIC VA Statewide,Digital,443.58750,448.58750,High,12.5KHz,None,Always,None,2,Off,0,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+3,RIC HEARS,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+4,RIC TAC A,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+5,RIC TAC B,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+6,RIC TAC C*,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC C,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+7,RIC VA Shen Vall,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+8,RIC VA Southwest,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+9,RIC VA Peninsula,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+10,RIC VA Tidewater,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+11,RIC Quiet,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+12,RIC Echo Test,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+13,RIC Clear Timesl,Digital,443.58750,448.58750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+14,RIC Monitor TS1,Digital,443.58750,448.58750,High,12.5KHz,None,Always,None,2,Off,0,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+15,RIC Monitor TS2,Digital,443.58750,448.58750,High,12.5KHz,None,Always,None,2,Off,0,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+16,BEA RVA Metro,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+17,BEA VA Statewide,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+18,BEA HEARS,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+19,BEA TAC A,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+20,BEA TAC B,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+21,BEA VA Shen Vall,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+22,BEA VA Southwest,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+23,BEA VA Peninsula,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+24,BEA VA Tidewater,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+25,BEA Quiet,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+26,BEA Echo Test,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+27,BEA Clear Timesl,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+28,BEA Monitor TS1,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+29,BEA Monitor TS2,Digital,444.61250,449.61250,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+30,GCH RVA Metro,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+31,GCH VA Statewide,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+32,GCH HEARS,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+33,GCH TAC A,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+34,GCH TAC B,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+35,GCH VA Shen Vall,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+36,GCH VA Southwest,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+37,GCH VA Peninsula,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+38,GCH VA Tidewater,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+39,GCH Quiet,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+40,GCH Echo Test,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+41,GCH Clear Timesl,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+42,GCH Monitor TS1,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+43,GCH Monitor TS2,Digital,443.43750,448.43750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+44,LX1 RVA Metro,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+45,LX1 VA Statewide,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+46,LX1 HEARS,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+47,LX1 TAC A,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+48,LX1 TAC B,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+49,LX1 VA Shen Vall,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+50,LX1 VA Southwest,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+51,LX1 Quiet,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+52,LX1 Echo Test,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+53,LX1 Clear Timesl,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+54,LX1 Monitor TS1,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+55,LX1 Monitor TS2,Digital,441.92500,446.92500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+56,MDX RVA Metro,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+57,MDX VA Statewide,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+58,MDX HEARS,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+59,MDX TAC A,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+60,MDX TAC B,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+61,MDX VA Shen Vall,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+62,MDX VA Southwest,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+63,MDX VA Peninsula,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+64,MDX VA Tidewater,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+65,MDX Quiet,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+66,MDX Echo Test,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+67,MDX Clear Timesl,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+68,MDX Monitor TS1,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+69,MDX Monitor TS2,Digital,440.62500,445.62500,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+70,NKC RVA Metro,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+71,NKC VA Statewide,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+72,NKC HEARS,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+73,NKC TAC A,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+74,NKC TAC B,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+75,NKC VA Shen Vall,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+76,NKC VA Southwest,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+77,NKC VA Peninsula,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+78,NKC VA Tidewater,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+79,NKC Quiet,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+80,NKC Echo Test,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+81,NKC Clear Timesl,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+82,NKC Monitor TS1,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+83,NKC Monitor TS2,Digital,442.05000,447.05000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+84,PBG RVA Metro,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+85,PBG VA Statewide,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+86,PBG HEARS,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+87,PBG TAC A,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+88,PBG TAC B,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+89,PBG TAC C*,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC C,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+90,PBG VA Shen Vall,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+91,PBG VA Southwest,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+92,PBG VA Peninsula,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+93,PBG VA Tidewater,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+94,PBG Quiet,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+95,PBG Echo Test,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+96,PBG Clear Timesl,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+97,PBG Monitor TS1,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+98,PBG Monitor TS2,Digital,442.68750,447.68750,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+99,POR RVA Metro,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+100,POR VA Statewide,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+101,POR HEARS,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+102,POR TAC A,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+103,POR TAC B,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+104,POR TAC C*,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,TAC C,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+105,POR VA Shen Vall,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+106,POR VA Southwest,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+107,POR VA Peninsula,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+108,POR VA Tidewater,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+109,POR Quiet,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+110,POR Echo Test,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+111,POR Clear Timesl,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+112,POR Monitor TS1,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+113,POR Monitor TS2,Digital,440.80000,445.80000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,,None,None,None,Carrier/CTC,None,OFF,0,0
+114,POW RVA Metro,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+115,POW VA Statewide,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,VA Statewide,None,1,Slot 2,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+116,POW HEARS,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,HEARS Link,None,1,Slot 2,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+117,POW TAC A,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,TAC A,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+118,POW TAC B,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,TAC B,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+119,POW VA Shen Vall,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,VA Shen Valley,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+120,POW VA Southwest,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,VA Southwest,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+121,POW VA Peninsula,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,VA Peninsula,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+122,POW VA Tidewater,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,VA Tidewater,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+123,POW Quiet,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,Local,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+124,POW Echo Test,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,0,0,0,0,0,0,Parrot,None,1,Slot 1,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+125,POW Clear Timesl,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,0,0,0,1,0,0,0,0,0,Clear Timeslot,None,1,Slot 2,0,None,1,0,0,0,CHANGEME,None,None,None,Carrier/CTC,None,OFF,0,0
+126,POW Monitor TS1,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 1,0,None,1,0,0,0,³« ,None,None,None,Carrier/CTC,None,OFF,0,0
+127,POW Monitor TS2,Digital,443.35000,448.35000,High,12.5KHz,None,Channel Idle,None,2,Off,1,0,0,0,0,0,0,0,0,None,DMRVA,1,Slot 2,0,None,1,0,0,0,³« ,None,None,None,Carrier/CTC,None,OFF,0,0
+128,RATS UHF,Analog,442.55000,447.55000,High,25KHz,None,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,WV Statewide,None,0,Slot 1,0,None,1,0,0,0,CHANGEME,74.4,74.4,None,Carrier/CTC,None,OFF,0,0

@@ -1,0 +1,10 @@
+No.,Scan Name,CTC Scan Mode,Scan Tx Mode,Hang Time,Priority Channel 1,Priority Channel 2,Designed Channel,Priority Sweep Time,Talkback,Channel Members
+1,RIC Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,RIC Monitor TS1|RIC Monitor TS2|
+2,BEA Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,BEA Monitor TS1|BEA Monitor TS2|
+3,LX1 Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,LX1 Monitor TS1|LX1 Monitor TS2|
+4,PBG Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,PBG Monitor TS1|PBG Monitor TS2|
+5,POW Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,POW Monitor TS1|POW Monitor TS2|
+6,POR Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,POR Monitor TS1|POR Monitor TS2|
+7,MDX Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,MDX Monitor TS1|MDX Monitor TS2|
+8,NKC Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,NKC Monitor TS1|NKC Monitor TS2|
+9,GCH Mon All,Detection CTC,Current Channel,3.0,None,None,RIC RVA Metro,500,0,GCH Monitor TS1|GCH Monitor TS2|

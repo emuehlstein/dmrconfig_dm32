@@ -1,0 +1,26 @@
+No.,Channel Name,Channel Type,RX Frequency[MHz],TX Frequency[MHz],Power,Band Width,Scan List,TX Admit,Emergency System,Squelch Level,APRS Report Type,Forbid TX,APRS Receive,Forbid Talkaround,Auto Scan,Lone Work,Emergency Indicator,Emergency ACK,Analog APRS PTT Mode,Digital APRS PTT Mode,TX Contact,RX Group List,Color Code,Time Slot,Encryption,Encryption ID,APRS Report Channel,Direct Dual Mode,Private Confirm,Short Data Confirm,DMR ID,CTC/DCS Decode,CTC/DCS Encode,Scramble,RX Squelch Mode,Signaling Type,PTT ID,VOX Function,PTT ID Display
+1,Channel 1,Digital,430.01250,430.01250,High,12.5KHz,None,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+2,Channel 2,Digital,432.22500,432.22500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+3,Channel  3,Digital,434.42500,434.42500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+4,Channel  4,Digital,436.62500,436.62500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+5,Channel  5,Digital,438.82500,438.82500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+6,Channel 6,Digital,144.02250,144.02250,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+7,Channel 7,Digital,144.12500,144.12500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+8,Channel 8,Digital,145.52500,145.52500,High,12.5KHz,None,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+9,Channel 9,Digital,145.97500,145.97500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+10,Channel 10,Analog,431.12500,431.12500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+11,Channel 11,Analog,433.32500,433.32500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+12,Channel 12,Analog,435.52500,435.52500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+13,Channel 13,Analog,437.72500,437.72500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+14,Channel 14,Analog,439.97500,439.97500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+15,Channel 15,Analog,144.02250,144.02250,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+16,Channel 16,Analog,145.98500,145.98500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,None,None,1,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+17,DMR Repeater,Digital,439.11000,439.11000,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+18,DTMF Call,Analog,431.07250,431.07250,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,None,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,DTMF,OFF,0,0
+19,2 Tone Call,Analog,432.08250,432.08250,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,None,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+20,5 Tone Call,Analog,434.04350,434.04350,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,None,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Optional Signaling,Five Tone,OFF,0,0
+21,BDC1200,Analog,436.06150,436.06150,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,None,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,BDC1200,EOT,0,0
+22,Digital Encrypt,Digital,430.01250,430.01250,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,1,Slot 1,1,Encrypt 1,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+23,Digital Alarm,Digital,433.02500,433.02500,High,12.5KHz,None,Always,DEmer 1,3,Off,0,0,0,0,0,1,1,0,0,Contacts 1,RX Group 1,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+24,APRS Test,Digital,432.02500,432.02500,High,12.5KHz,None,Always,None,3,Digital,0,1,0,0,0,0,0,0,0,Contacts 1,RX Group 1,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
+25,TDMA Direct Mode,Digital,434.72500,434.72500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Contacts 1,RX Group 1,0,Slot 1,0,None,1,0,0,0,Radio 1,None,None,None,Carrier/CTC,None,OFF,0,0
