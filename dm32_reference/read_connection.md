@@ -8,6 +8,7 @@ It is grounded in the latest capture logs:
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_dmrva_write.txt`
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_read.txt`
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_write.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_read.txt`
 
 and cross‑checked against the extracted content in:
 
@@ -27,6 +28,7 @@ Notes:
 
 - In these captures, these tokens are sent without trailing CR (0x0D). The logger shows 7‑byte writes with no 0x0D.
 - Radio replies with short status bursts, e.g.: `06 44 50 35 37 30 55 56` → “.DP570UV”.
+- PASSSTA reply varies by unit/build: seen as `50 FF FF` in some sessions and `50 00 00` in others.
 
 ### 2. Version/info probes (V frames)
 
@@ -40,7 +42,12 @@ Termination detail:
 
 Reply structure:
 
-- `56 <type> <length> <payload[length]>`
+- `56 <type> <length> <payload[length]>` — the second byte echoes the queried id; length is a single byte.
+
+Special handshake probe detail (`56 00 00 40 0D`):
+
+- The reply to this request presents as `56 0D 40 <64 bytes...>` — i.e., an id `0x0D` frame with length `0x40` (64). In later normal polling of `id=0x0D` via `56 00 00 00 0D`, the reply is empty (`56 0D 00`). This suggests 0x40 triggers a one‑time “capabilities/feature block” routed through id 0x0D.
+- Example (prefix): `56 0D 40 03 4E 2D 00 … 00 3F 00 …` (content not yet decoded; likely feature flags/limits — we treat it as a capabilities block).
 
 Examples:
 
@@ -77,20 +84,20 @@ Observed IDs in these captures (both dmrva and factory reads show the same set):
   - Example payload: `52 31 2E 30 30 2E 30 31 2E 30 30 31` → “R1.00.01.001”
   - Typical length: 0x0C (12).
 
-- `0x06` — Pointer/limit tuple (binary)
+- `0x06` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 10 20 00 FF 4F 26 00`
-  - Interpretation: `addr=0x001020`, tail field `FF 4F 26 00` resembles a 16‑bit value `0x264F` with `0xFF` prefix and `0x00` suffix (pattern repeats across IDs).
+  - Interpretation: base `0x001020`, mask_le `0x4FFF`, stride_le `0x0026` → segment_size `0x5000` (20 KiB), record_size 38.
 
-- `0x07` — Pointer/limit tuple (binary)
+- `0x07` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 90 0C 00 FF 9F 14 00` → `addr=0x00900C`, tail `0x149F`.
 
-- `0x08` — Pointer/limit tuple (binary)
+- `0x08` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 00 18 00 FF 0F 20 00` → `addr=0x000018`, tail `0x200F`.
 
-- `0x09` — Pointer/limit tuple (binary)
+- `0x09` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 C0 6D 00 FF FF FF 00` → `addr=0x00C06D`, tail all `0xFF`.
 
-- `0x0A` — Pointer/limit tuple (binary)
+- `0x0A` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 10 00 00 FF 8F 0C 00` → `addr=0x001000`, tail `0x0C8F`.
 
 - `0x0B` — C‑module version (ASCII)
@@ -98,9 +105,11 @@ Observed IDs in these captures (both dmrva and factory reads show the same set):
   - Typical length: 0x0C (12).
 
 - `0x0D` — Empty
-  - Example payload: length `0x00` (no data)
+  - Two modes observed:
+    - Handshake mode (triggered by `56 00 00 40 0D`): length `0x40` (64‑byte capabilities/feature block). Example prefix: `03 4E 2D 00 … 00 3F 00 …`.
+    - Normal poll (`56 00 00 00 0D`): length `0x00` (no data).
 
-- `0x0E` — Pointer/limit tuple (binary)
+- `0x0E` — Pointer tuple (binary)
   - Example payload (8 bytes): `00 00 15 00 FF 5F 17 00` → `addr=0x000015`, tail `0x175F`.
 
 - `0x0F` — Pointer bundle (binary)
@@ -125,16 +134,42 @@ Notes:
 
 #### Pointer decoding and tracking
 
-Some V‑frames (e.g., `id=0x0F`) return pointers to structures stored in flash. Based on the captures:
+Many V‑frames are 8‑byte tuples that act like a dynamic partition map. The structure is:
 
-- Pointer layout: first 3 bytes of the payload encode a 24‑bit big‑endian address; the 4th byte is padding `0x00`.
-- Recommended decoder:
-  - Extract `addr = (b0 << 16) | (b1 << 8) | b2` from payload bytes `[0..2]`.
-  - Optionally record the trailing bytes for correlation (`b3` pad, and any `[4..]` metadata).
-- Cross‑validation step:
-  - After parsing a pointer V‑frame, confirm with an immediate `R (0x52)` read at `addr` to ensure the pointer is live in this firmware build.
-- Tracking guidance:
-  - Maintain a small table in code/docs mapping `V‑id → {addr?, notes, last‑seen payload}` to help correlate with memory maps (`dm32-map.h`) and CSV exports.
+- Bytes `[0..2]`: 24‑bit big‑endian base address (`addr = b0<<16 | b1<<8 | b2`)
+- Byte `[3]`: pad `0x00`
+- Bytes `[4..5]`: `mask_le` (little‑endian)
+- Bytes `[6..7]`: `stride_le` (little‑endian)
+
+Derived values:
+
+- `segment_size = mask_le + 1` (masks typically end with `0xFFF`, yielding neat 4 KiB multiples)
+- `record_size = stride_le` (when `record_size == 0x00FF`, treat as variable/blob rather than fixed records)
+- Capacity estimate: `segment_size / record_size` when `record_size` is not 0xFF
+
+Validation tips:
+
+- After parsing, you can immediately probe the base address with a tiny `R (0x52)` read to confirm. CPS itself does this after `id=0x0F`.
+- The tuple values are stable across captures (factory, dmrva, GBFMcCall), so prefer them over any static memory map.
+
+#### Dynamic partition map (decoded from V‑frames)
+
+Observed stable tuples across all three captures. For each id: base, segment size (bytes and KiB), record size (bytes), and an implied maximum record count when fixed.
+
+| ID   | Base     | Segment size | Size (KiB) | Record size | Implied max | Notes |
+|------|----------|--------------|------------|-------------|-------------|-------|
+| 0x06 | 0x001020 | 20479+1      | 20 KiB     | 38          | ≈ 538       | Index/table; dump contains RIFF/WAVE markers → likely audio resource index |
+| 0x07 | 0x00900C | 40959+1      | 40 KiB     | 20          | 2048        | compact per‑item table |
+| 0x08 | 0x000018 | 4095+1       | 4 KiB      | 32          | 128         | likely Zones |
+| 0x09 | 0x00C06D | 65535+1      | 64 KiB     | 255         | —           | blob/variable (emergency/encrypt/messages vicinity) |
+| 0x0A | 0x001000 | 36863+1      | 36 KiB     | 12          | 3072        | Compact per‑item table; changes with CPS programming (canned messages/text) |
+| 0x0E | 0x000015 | 24575+1      | 24 KiB     | 23          | ≈ 1068      | index/list (e.g., memberships) |
+| 0x0F | 0x008027 | 49151+1      | 48 KiB     | 109         | ≈ 451       | Contacts/Talkgroups index/head |
+
+Notes:
+
+- All numbers are identical in `serial_capture_dmrva_read.txt`, `serial_capture_factory_read.txt`, and `serial_capture_GBFMcCall_read.txt`.
+- The 0x0F tuple is corroborated by CPS: it immediately probes `52 00 80 27 04 00` and receives `… 01 00 00 00`.
 
 ### 3. Resource fetch (optional)
 
@@ -159,8 +194,8 @@ After this handshake, the radio accepts random‑access memory reads.
   - Example: `52 00 80 27 04 00` → read 4 bytes at 0x008027
 
 - Read reply (radio → host):
-  - `0x57` + echo of address (3 bytes) + echo of length (2 bytes) + payload (len bytes)
-  - The echoed header is 6 bytes in total (1 + 3 + 2). Example: `57 FF 1F 00 01 00 07` is a 1‑byte payload 0x07 read from 0xFF1F00.
+  - `0x57` + echoed address (3 bytes, big‑endian) + echoed length (2 bytes, little‑endian) + payload (len bytes)
+  - The echoed header is 6 bytes total (1 + 3 + 2). Example: `57 FF 1F 00 01 00 07` is a 1‑byte payload 0x07 read from 0xFF1F00.
 
 Notes:
 
@@ -197,19 +232,27 @@ Also seen repeatedly:
 
 - `52 01 F0 FF 00 10` → 0x01F0FF (likely a guard/keep‑alive page; inflates image high‑water mark to ~0x200FF when included)
 
-Our tool reads a curated subset of these 4 KiB pages (see `dm32-map.h`) and saves the highest written offset + last block length, producing a `device.img` near 0x200FF (131,327 bytes) when the 0x01F0FF page is included.
+Historically, we mirrored a static set of 4 KiB pages (see legacy `dm32-map.h`). As of now, we prefer the dynamic V‑frame partition map and fetch those segments directly; small fixed pages (like 0x00600C for channel labels) are still useful to pull explicitly for parsers and diagnostics.
 
 ## component locations and markers
 
 Anchors verified against the new serial captures and cross‑checked with `factory.data` and CSVs:
 
 - Contacts (Talkgroups)
-  - V‑frame `56 0F` returns pointer `00 80 27 00` → address `0x008027`. CPS immediately probes: `52 00 80 27 04 00` → `57 00 80 27 04 00 01 00 00 00` (little‑endian dword = 1). This looks like the head of a contacts table/index.
-  - Contact names/labels reside in the broader `0x008000` page(s); do not expect a fixed ASCII marker at 0x008027 in all builds.
+  - `id=0x0F`: base `0x008027`, 48 KiB segment, 109‑byte records → capacity ≈ 451. CPS immediately probes this address; this is the best‑confirmed anchor for contacts/talkgroups.
+  - Surrounding 0x0080xx region contains strings; 0x0F gives you the true index head regardless of page alignment.
 
-- Roam/Channels/Zone labels region
-  - Label/UI strings are spread across `0x00D0xx` (e.g., `0x00D00A`) and the `0x006000..0x009FFF` window.
-  - In this capture, `0x00D000` payload appears mostly `0xFF` fill; adjacent pages often carry strings. Treat `0x00D000..0x00D00F` as a vicinity.
+- Zones
+  - `id=0x08`: base `0x000018`, 4 KiB, 32‑byte records → capacity 128. Your exports (e.g., GBFMcCall/dmrva) show ≪128 zones used, which fits.
+
+- Channel‑related tables (indices/memberships)
+  - `id=0x07` (40 KiB, 20‑byte records) and `id=0x0A` (36 KiB, 12‑byte records) are strong candidates for compact per‑channel or membership tables (e.g., zone→channel or channel flags). The true bulk channel bodies may still be elsewhere; use these as authoritative heads to enumerate entries.
+
+- RX Groups / Scan Lists / Lists
+  - `id=0x0E` (24 KiB, 23‑byte records) and `id=0x06` (20 KiB, 38‑byte records) look like list/index tables. Correlate counts against CSVs to decide which is RX groups vs. scan lists in a given codeplug.
+
+- Emergency/Encryption/messages blob
+  - `id=0x09`: large 64 KiB segment with stride 0xFF → treat as a structured blob region (fits with exports where these features are singletons, not large tables).
 
 - Zones
   - Zone info is accessed at `0x000000/0x000001` base pages (in this capture: `0x000001`).
@@ -233,8 +276,8 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 
 ## quick memory map (observed)
 
-- 0x006000–0x006FFF: String‑heavy labels (channel/zone names). Reads around 0x0060xx common in some sessions.
-- 0x008000–0x008FFF: Contacts/Talkgroups labels and index; V‑frame pointer to 0x008027 confirmed; dword at 0x008027 = 0x00000001 in this capture.
+- 0x006000–0x006FFF: String‑heavy labels (channel/zone names). Reads around 0x0060xx are common.
+- 0x008000–0x008FFF: Contacts/Talkgroups index vicinity; V‑frame pointer to 0x008027 confirmed; dword at 0x008027 often `0x00000001`.
 - 0x009000–0x009FFF: Continuation of labels and/or analog label windows.
 - 0x00D000–0x00DFFF: Roam/label/UI strings vicinity (anchors vary by build; adjacent 0x00D00x often populated).
 - Additional pages around 0x000100–0x000F00, 0x002000–0x007000, and 0x00A000–0x00B000 hold parameter tables and references used by UI/CSV composition.
@@ -246,7 +289,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - ASCII handshake: PSEARCH → PASSSTA → SYSINFO (sent without CR in this capture)
   - V (0x56) queries 0x01..0x10 to retrieve version, IDs, pointers
     - Only `56 00 00 40` uses CR here; others do not and still work
-    - Replies: `56 <type> <len> <payload[len]>`
+    - Replies: `56 <id> <len> <payload[len]>`
   - Optional G (0x47) fetch for resource block
   - PROGRAM entry: FF FF FF FF 0C “PROGRAM”, radio acks 0x06; host sends 0x02; radio emits FF fill; host sends 0x06; radio acks 0x06
   - R (0x52) reads: address[3, big‑endian] + length[2, little‑endian]
@@ -280,9 +323,13 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 
 ## notes and next steps
 
-- The address set in `dm32-map.h` mirrors CPS behavior seen here and reconstructs the factory CSV datasets for channels and contacts.
-- RX Group and Scan List data are touched explicitly at `0x00F003` and `0x00B006` in this capture; include adjacent `0x00D0xx/0x00Exxx` pages to collect UI strings if needed.
+- Prefer the dynamic partition map provided by V‑frames over any static address table. These tuples are stable across captures and encode base, total segment size, and record size for robust readers.
+- Cross‑validate by matching implied capacities (segment_size/record_size) against exported CSV counts (e.g., zones used ≤ 128; talkgroups used ≤ ~451).
 - The `0x01F0FF` 4 KiB reads are likely session housekeeping; omit them for a compact logical image without losing user data.
+- Tooling:
+  - `tools/parse_vframes.py` — extract and decode V‑frames from captures
+  - `tools/dm32_dynamic_dump.py` — live dynamic dump of V‑segments to files (plus index.json)
+  - `tools/dm32_analyze_dump.py` — analyze dumped segments (ASCII density, record counts, quick heuristics)
 
 ## V‑frame quick reference
 
@@ -312,4 +359,4 @@ Notes:
 
 ---
 
-Revision: 2025‑09‑28 (updated with DM32_OEM_CPS serial captures)
+Revision: 2025‑09‑28 (updated with DM32_OEM_CPS serial captures and dynamic V‑segment mapping)
