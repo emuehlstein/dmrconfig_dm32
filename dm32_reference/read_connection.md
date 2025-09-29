@@ -188,51 +188,62 @@ Notes:
 After this handshake, the radio accepts random‑access memory reads.
 
 ### 5. Random access memory reads (R/W frames)
-
 - Read request (host → radio):
   - `0x52` + 24‑bit address (big‑endian, 3 bytes) + 16‑bit length (little‑endian, 2 bytes)
   - Example: `52 00 80 27 04 00` → read 4 bytes at 0x008027
 
-- Read reply (radio → host):
+- Read reply (radio → host) (first ~200 reads are 1 byte payloads, then the radio starts sending 4k blocks beginning with the channel data)
   - `0x57` + echoed address (3 bytes, big‑endian) + echoed length (2 bytes, little‑endian) + payload (len bytes)
   - The echoed header is 6 bytes total (1 + 3 + 2). Example: `57 FF 1F 00 01 00 07` is a 1‑byte payload 0x07 read from 0xFF1F00.
 
 Notes:
 
-- The CPS issues many single‑byte reads in the 0xFFxxxx range (`52 FF .. .. 01 00`), likely status/keepalive probes.
-- Substantive data is fetched in 4 KiB pages from a fixed set of addresses.
-
-## observed 4 KiB read set (examples)
-
-Representative 4 KiB reads emitted by the CPS in the captures (addresses within the same 0x1000 page may vary by a few bytes):
-
-- `52 00 50 01 00 10` → 0x005001 (channel data window)
-- `52 00 70 01 00 10` → 0x007001 (channel data window)
-- `52 00 B0 06 00 10` → 0x00B006 (scan lists)
-- `52 00 30 07 00 10` → 0x003007
-- `52 00 20 07 00 10` → 0x002007
-- `52 00 A0 02 00 10` → 0x00A002
-- `52 00 D0 0A 00 10` → 0x00D00A
-- `52 00 00 02 00 10` → 0x000002
-- `52 00 20 00 00 10` → 0x002000
-- `52 00 10 04 00 10` → 0x001004
-- `52 00 90 04 00 10` → 0x009004
-- `52 00 F0 03 00 10` → 0x00F003
-- `52 00 30 00 00 10` → 0x003000
-- `52 00 10 03 00 10` → 0x001003
-- `52 00 80 02 00 10` → 0x008002
-- `52 00 40 08 00 10` → 0x004008
-- `52 00 80 00 00 10` → 0x008000 (contacts/labels vicinity)
-- `52 00 A0 00 00 10` → 0x00A000
-- `52 00 B0 00 00 10` → 0x00B000 (talkgroups)
-- `52 00 00 01 00 10` → 0x000001 (zones page in this capture)
-- `52 00 C0 00 00 10` → 0x00C000 (emergency/encryption vicinity)
+- The CPS issues many single‑byte reads in the 0xFFxxxx range (`52 FF .. .. 01 00`). Treat these as a significant option/status probe matrix; see “FFxx option probe matrix”.
+- Substantive data is fetched in 4 KiB pages. The addresses of these pages may be contained in the v-frame data.
 
 Also seen repeatedly:
 
 - `52 01 F0 FF 00 10` → 0x01F0FF (likely a guard/keep‑alive page; inflates image high‑water mark to ~0x200FF when included)
 
-Historically, we mirrored a static set of 4 KiB pages (see legacy `dm32-map.h`). As of now, we prefer the dynamic V‑frame partition map and fetch those segments directly; small fixed pages (like 0x00600C for channel labels) are still useful to pull explicitly for parsers and diagnostics.
+ 
+
+- Request shape: `52 FF <mid> <page> 01 00`
+  - The middle address byte `<mid>` walks `0x1F, 0x2F, 0x3F, …, 0xFF` (16 probes per page)
+  - The low address byte `<page>` increments (`0x00, 0x01, 0x02, …`), covering ~12 pages in our traces (~192–200 total probes)
+  - Each probe returns exactly one data byte; the reply echoes address and length: `57 FF <mid> <page> 01 00 <value>`
+
+Observed differences (example):
+
+- Probe: `52 FF 6F 02 01 00`
+  - dmrva_read → `57 FF 6F 02 01 00 00`
+  - GBFMcCall_read → `57 FF 6F 02 01 00 00`
+  - factory_read → `57 FF 6F 02 01 00 04`
+
+Most other slots return the same constants across all three captures (e.g., `0x5C`, `0x41`, `0x55`), suggesting a largely static option map with a handful of per‑image flags.
+
+Guidance:
+
+- Treat these bytes as an option/status bitmap for CPS feature gating or display settings. They are not required to locate user data; prefer the dynamic V‑frame pointers for the memory map.
+- If you want to fingerprint a radio image or explain CPS behavior differences, record this matrix alongside V‑frame results.
+
+#### FFxx option probe matrix — results and artifacts
+
+- Full sweep (200-ish single‑byte probes) combined CSV:
+  - `dm32_reference/exports/probes/ff_probe_matrix_combined.csv`
+- Differences only (concise Markdown table):
+  - `dm32_reference/exports/probes/ff_probe_matrix_differences.md`
+
+Summary of observed differences across the three captures:
+
+| Address | dmrva_read | GBFMcCall_read | factory_read |
+|---|---|---|---|
+| FF:6F:02 | 00 | 00 | 04 |
+| FF:5F:03 | 5C | 00 | 5C |
+| FF:6F:03 | 04 | 04 | FF |
+| FF:7F:03 | FF | 00 | FF |
+| FF:8F:03 | FF | 00 | FF |
+| FF:AF:03 | FF | 00 | FF |
+| FF:BF:03 | FF | 5C | FF |
 
 ## component locations and markers
 
@@ -274,14 +285,6 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - write a sparse file with only fetched pages at true addresses; or
   - serialize just structures of interest (channels, contacts, zones, etc.).
 
-## quick memory map (observed)
-
-- 0x006000–0x006FFF: String‑heavy labels (channel/zone names). Reads around 0x0060xx are common.
-- 0x008000–0x008FFF: Contacts/Talkgroups index vicinity; V‑frame pointer to 0x008027 confirmed; dword at 0x008027 often `0x00000001`.
-- 0x009000–0x009FFF: Continuation of labels and/or analog label windows.
-- 0x00D000–0x00DFFF: Roam/label/UI strings vicinity (anchors vary by build; adjacent 0x00D00x often populated).
-- Additional pages around 0x000100–0x000F00, 0x002000–0x007000, and 0x00A000–0x00B000 hold parameter tables and references used by UI/CSV composition.
-
 ## protocol “contract” summary
 
 - Transport: UART (CH340), 115200 baud
@@ -290,7 +293,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - V (0x56) queries 0x01..0x10 to retrieve version, IDs, pointers
     - Only `56 00 00 40` uses CR here; others do not and still work
     - Replies: `56 <id> <len> <payload[len]>`
-  - Optional G (0x47) fetch for resource block
+  - G (0x47) fetch for resource block
   - PROGRAM entry: FF FF FF FF 0C “PROGRAM”, radio acks 0x06; host sends 0x02; radio emits FF fill; host sends 0x06; radio acks 0x06
   - R (0x52) reads: address[3, big‑endian] + length[2, little‑endian]
   - W (0x57) replies: 6‑byte echo header + payload
@@ -330,8 +333,11 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - `tools/parse_vframes.py` — extract and decode V‑frames from captures
   - `tools/dm32_dynamic_dump.py` — live dynamic dump of V‑segments to files (plus index.json)
   - `tools/dm32_analyze_dump.py` — analyze dumped segments (ASCII density, record counts, quick heuristics)
+  - `tools/dm32_extract_ff_probe_matrix.py` — extract FFxx option probe matrix from serial capture logs and emit CSV/Markdown reports
+- The CPS issues many single‑byte reads in the 0xFFxxxx range (`52 FF .. .. 01 00`). Treat these as a significant option/status probe matrix; see “FFxx option probe matrix”.
 
 ## V‑frame quick reference
+
 
 | ID    | Typical len | Example payload (truncated)                  | One‑line semantic guess |
 |-------|-------------|----------------------------------------------|-------------------------|
