@@ -26,10 +26,7 @@
 // Image/memory characteristics
 #define DM32_MEMSZ          0x200000   // 2 MiB safe bound used by reader
 
-// Channel slot layout window (observed)
-#define DM32_CHAN_BASE      0x00601C   // First slot label address
-#define DM32_CHAN_STRIDE    0x30       // 48 bytes per slot
-#define DM32_CHAN_WINDOW    240        // Extend parsing to ~11.5 KiB window (fits reads at 0x00600C,0x007001,0x008000)
+// Channel slot layout: no static anchors; discovered dynamically from V-frames
 
 // Label → pad → signature seeking
 #define DM32_LABEL_PAD_MAX  16         // Skip up to 16 pad bytes (0xFF/0x00) after label
@@ -52,6 +49,66 @@
 
 // Simple helpers and minimal protocol implementation
 static unsigned dm32_written_max = 0;
+
+// Quick-probe info captured during handshake and V queries
+static char     dm32_board_id[32];
+static char     dm32_fw_version[64];
+static char     dm32_build_date[32];
+static uint32_t dm32_contacts_ptr = 0;
+static int      dm32_info_ready = 0;
+
+// Generic pointer helper (like GET_* in other drivers), type-agnostic for now.
+#define DM32_PTR(addr)               ((unsigned char*) (&radio_mem[(addr)]))
+
+// -----------------------------------------------------------------------------
+// Strict ordering helpers (to emulate OEM CPS sequence)
+// -----------------------------------------------------------------------------
+// Track pages we've already fetched (address only; all 0x1000 unless noted)
+static uint32_t dm32_read_addrs[256];
+static unsigned dm32_read_addrs_n = 0;
+
+static int dm32_was_read(uint32_t addr)
+{
+    for (unsigned i = 0; i < dm32_read_addrs_n; ++i)
+        if (dm32_read_addrs[i] == addr) return 1;
+    return 0;
+}
+
+static void dm32_mark_read(uint32_t addr)
+{
+    if (dm32_was_read(addr)) return;
+    if (dm32_read_addrs_n < (sizeof(dm32_read_addrs)/sizeof(dm32_read_addrs[0])))
+        dm32_read_addrs[dm32_read_addrs_n++] = addr;
+}
+
+// Forward declaration for block read with retry (used by early helpers)
+static int dm32_read_block_retry(uint32_t addr24, uint16_t len, int attempts);
+
+// OEM CPS performs many tiny 1-byte reads across FFxx pages before first 4K read.
+// We emulate the observed pattern: low=0x00..0x0C; mid in {0x0F,0x1F,..,0xFF}
+#if defined(__GNUC__)
+__attribute__((unused))
+#endif
+static void dm32_ff_sweep(unsigned low_max)
+{
+    for (unsigned low = 0x00; low <= low_max; ++low) {
+        for (unsigned mid = 0x0F; mid <= 0xFF; mid += 0x10) {
+            uint32_t a = 0xFF0000u | (mid << 8) | (uint32_t)low;
+            (void) dm32_read_block_retry(a, 1, 1);
+        }
+    }
+}
+
+// OEM CPS issues repeated polls to 0x01F0FF 4K page; mimic a few times
+#if defined(__GNUC__)
+__attribute__((unused))
+#endif
+static void dm32_poll_01f0ff(int repeats)
+{
+    for (int i = 0; i < repeats; ++i) {
+        (void) dm32_read_block_retry(0x01F0FF, 0x1000, 1);
+    }
+}
 
 typedef struct { uint32_t addr; uint16_t len; } dm32_block_t;
 // Common entry types used across collectors
@@ -90,18 +147,18 @@ typedef struct {
 static void dm32_write_slots_debug_csv(void);
 static void dm32_write_channels_fields_csv(void);
 static int dm32_parse_slot(uint32_t base, dm32_channel_t *out);
+static int dm32_find_channel_segment(uint32_t *out_base, uint16_t *out_stride, unsigned *out_records);
 // Helpers used by parsers (defined later in file)
 static double bcd_mhz(const unsigned char *p);
 static double f32_mhz(const unsigned char *p);
 static double bcd_mhz_alt(const unsigned char *p);
 static double decode_freq_mhz(const unsigned char *p, double rx_hint);
+static int is_ascii_print(unsigned char c);
 
-// Addresses observed in CPS capture; used to guide reading and mapping.
-// Kept in a separate header to ease collaborative reverse-engineering.
-static const dm32_block_t dm32_blocks[] = {
-#include "dm32-map.h"
-};
-static const unsigned dm32_nblocks = sizeof(dm32_blocks)/sizeof(dm32_blocks[0]);
+// Dynamic V-frame segments discovered at runtime
+typedef struct { uint8_t id; uint32_t base; uint16_t mask_le; uint16_t stride_le; } dm32_vseg_t;
+static dm32_vseg_t dm32_vsegs[16];
+static unsigned dm32_nvsegs = 0;
 
 static void dm32_dump_reads(int msec)
 {
@@ -139,6 +196,119 @@ static int dm32_drain_collect(int msec)
         if (n > 0) total += n;
     }
     return total;
+}
+
+// Forward declaration for exact read used by V-frame reader
+static int dm32_read_exact(unsigned char *buf, int n, int timeout_msec);
+
+// Collect bytes for a short window into a buffer. Returns number of bytes stored.
+static int dm32_collect_reads(unsigned char *out, int maxlen, int msec)
+{
+    int total = 0;
+    int iters = msec / 25; if (iters < 1) iters = 1;
+    while (iters-- > 0) {
+        unsigned char buf[256];
+        int n = serial_read(buf, sizeof(buf), 25);
+        if (n > 0 && out && total < maxlen) {
+            int cp = n; if (total + cp > maxlen) cp = maxlen - total;
+            memcpy(out + total, buf, cp);
+            total += cp;
+        }
+    }
+    return total;
+}
+
+// Read one V reply frame: 0x56, type, len, payload[len]. Returns 0 on success.
+static int dm32_read_v_frame(uint8_t *type, uint8_t *length, unsigned char *payload, int maxlen, int timeout_msec)
+{
+    unsigned char b;
+    int waited = 0;
+    // sync to 0x56
+    while (waited < timeout_msec) {
+        int r = serial_read(&b, 1, 50);
+        if (r <= 0) { waited += 50; continue; }
+        if (b == 0x56) {
+            unsigned char hdr[2];
+            if (dm32_read_exact(hdr, 2, 500) != 2)
+                return -1;
+            uint8_t t = hdr[0];
+            uint8_t len = hdr[1];
+            if ((int)len > maxlen) {
+                // drain
+                unsigned char tmp[256];
+                int toread = len; while (toread > 0) { int chunk = toread > (int)sizeof(tmp) ? (int)sizeof(tmp) : toread; int got = dm32_read_exact(tmp, chunk, 500); if (got <= 0) break; toread -= got; }
+                return -1;
+            }
+            if (dm32_read_exact(payload, len, 1000) != len)
+                return -1;
+            if (type) *type = t;
+            if (length) *length = len;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static void dm32_parse_v_reply(uint8_t type, uint8_t len, const unsigned char *pl)
+{
+    if (type == 0x01) {
+        // Firmware version ASCII
+        size_t n = (len < sizeof(dm32_fw_version)-1) ? len : sizeof(dm32_fw_version)-1;
+        memcpy(dm32_fw_version, pl, n); dm32_fw_version[n] = 0;
+    } else if (type == 0x03) {
+        size_t n = (len < sizeof(dm32_build_date)-1) ? len : sizeof(dm32_build_date)-1;
+        memcpy(dm32_build_date, pl, n); dm32_build_date[n] = 0;
+    } else if (type == 0x0F) {
+        if (len >= 3) {
+            dm32_contacts_ptr = ((uint32_t)pl[0] << 16) | ((uint32_t)pl[1] << 8) | (uint32_t)pl[2];
+        }
+        // Record this V-segment tuple when full 8-byte payload is provided by the radio
+        if (len == 8) {
+            dm32_vsegs[dm32_nvsegs].id = type;
+            dm32_vsegs[dm32_nvsegs].base = ((uint32_t)pl[0] << 16) | ((uint32_t)pl[1] << 8) | (uint32_t)pl[2];
+            dm32_vsegs[dm32_nvsegs].mask_le = (uint16_t)((uint16_t)pl[4] | ((uint16_t)pl[5] << 8));
+            dm32_vsegs[dm32_nvsegs].stride_le = (uint16_t)((uint16_t)pl[6] | ((uint16_t)pl[7] << 8));
+            if (dm32_nvsegs < (sizeof(dm32_vsegs)/sizeof(dm32_vsegs[0]))) dm32_nvsegs++;
+        }
+    } else if (type == 0x06 || type == 0x07 || type == 0x08 || type == 0x09 || type == 0x0A || type == 0x0E) {
+        // Generic pointer tuples: base (BE24), pad 0x00, mask_le, stride_le
+        if (len == 8) {
+            dm32_vsegs[dm32_nvsegs].id = type;
+            dm32_vsegs[dm32_nvsegs].base = ((uint32_t)pl[0] << 16) | ((uint32_t)pl[1] << 8) | (uint32_t)pl[2];
+            dm32_vsegs[dm32_nvsegs].mask_le = (uint16_t)((uint16_t)pl[4] | ((uint16_t)pl[5] << 8));
+            dm32_vsegs[dm32_nvsegs].stride_le = (uint16_t)((uint16_t)pl[6] | ((uint16_t)pl[7] << 8));
+            if (dm32_nvsegs < (sizeof(dm32_vsegs)/sizeof(dm32_vsegs[0]))) dm32_nvsegs++;
+        }
+    }
+}
+
+static void dm32_extract_board_id_from(const unsigned char *buf, int n)
+{
+    // find longest ASCII sequence >=5 chars and prefer ones containing DP/UV
+    int best_start = -1, best_len = 0, best_score = -1;
+    for (int i=0; i<n; ) {
+        if (is_ascii_print(buf[i])) {
+            int j = i; while (j < n && is_ascii_print(buf[j])) j++;
+            int L = j - i;
+            if (L >= 5) {
+                int score = L;
+                for (int k=i; k<j-1; ++k) {
+                    if (buf[k]=='D' && buf[k+1]=='P') score += 3;
+                    if (buf[k]=='U' && buf[k+1]=='V') score += 5;
+                }
+                // digits bonus
+                for (int k=i; k<j; ++k) if (buf[k]>='0'&&buf[k]<='9'){ score += 1; break; }
+                if (score > best_score) { best_score = score; best_start = i; best_len = L; }
+            }
+            i = j;
+        } else {
+            i++;
+        }
+    }
+    if (best_start >= 0) {
+        int L = best_len; if (L > (int)sizeof(dm32_board_id)-1) L = (int)sizeof(dm32_board_id)-1;
+        memcpy(dm32_board_id, buf + best_start, L); dm32_board_id[L] = 0;
+    }
 }
 
 // Return number of bytes observed over the next msec, draining input.
@@ -198,10 +368,17 @@ static int dm32_read_block(uint32_t addr24, uint16_t len)
     unsigned char cmd[6];
     unsigned char hdr[6];
 
-    // Bounds check to avoid overruns
-    if ((uint64_t)addr24 + (uint64_t)len > (uint64_t)(1024*1024*2)) {
-        if (trace_flag) fprintf(stderr, "DM32: skip out-of-range read %06X len %u\n", addr24, (unsigned)len);
-        return -1;
+    // Special-case: OEM CPS performs 1-byte (and other tiny) reads in the
+    // 0xFFxxxx space to "prime" channel windows. Allow these even though they
+    // are out of our image bounds, but discard payload instead of writing it
+    // into radio_mem. For all other addresses, enforce bounds as usual.
+    int is_ff_priming = (addr24 >= 0xFF0000u);
+    if (!is_ff_priming) {
+        // Bounds check to avoid overruns into the local radio_mem buffer.
+        if ((uint64_t)addr24 + (uint64_t)len > (uint64_t)DM32_MEMSZ) {
+            if (trace_flag) fprintf(stderr, "DM32: skip out-of-range read %06X len %u\n", addr24, (unsigned)len);
+            return -1;
+        }
     }
 
     // Build request
@@ -239,14 +416,24 @@ static int dm32_read_block(uint32_t addr24, uint16_t len)
             if (trace_flag) fprintf(stderr, "DM32: payload timeout after %u bytes\n", off);
             return -1;
         }
-        memcpy(radio_mem + addr24 + off, buf, r);
-        off += r;
-        toread -= r;
-        if ((addr24 + off) > dm32_written_max)
-            dm32_written_max = addr24 + off;
-        // Update progress (best-effort, capped to 100%).
-        if (radio_progress < 100)
-            radio_progress = (int)((dm32_written_max / (double)(1024*1024)) * 100.0);
+        if (!is_ff_priming) {
+            memcpy(radio_mem + addr24 + off, buf, r);
+            off += r;
+            toread -= r;
+            if ((addr24 + off) > dm32_written_max)
+                dm32_written_max = addr24 + off;
+            // Update progress (best-effort, capped to 100%).
+            if (radio_progress < 100) {
+                double pct = (dm32_written_max / (double)DM32_MEMSZ) * 100.0;
+                if (pct > 100.0) pct = 100.0;
+                if (pct < 0.0) pct = 0.0;
+                radio_progress = (int)pct;
+            }
+        } else {
+            // Priming read: discard payload, but still track off/toread
+            off += r;
+            toread -= r;
+        }
     }
     if (trace_flag) {
         fprintf(stderr, "DM32: read %u bytes at %06X\n", (unsigned)len, addr24);
@@ -263,9 +450,77 @@ static int dm32_read_block_retry(uint32_t addr24, uint16_t len, int attempts)
     }
     return -1;
 }
+
+// Read a range preferring 4 KiB page-aligned requests (like OEM CPS). If a page
+// read fails, fall back to smaller 16-byte segments within that page.
+static int dm32_read_range(uint32_t addr24, uint32_t len)
+{
+    if (len == 0) return 0;
+    // For small ranges, try a single-shot first
+    if (len <= 0x1000) {
+        if (dm32_read_block_retry(addr24, (uint16_t)len, 2) == 0)
+            return 0;
+        // fall through to segmented fallback
+    }
+
+    // Break into 4 KiB pages aligned to 0x1000 boundaries
+    uint32_t start = addr24 & ~0xFFFu;
+    uint32_t end = addr24 + len;
+    int overall_failures = 0;
+    for (uint32_t page = start; page < end; page += 0x1000) {
+        uint32_t page_end = page + 0x1000;
+        if (page_end > end) page_end = end;
+        uint32_t page_len = page_end - page;
+
+        // Try a single 4K (or tail) read anchored at the page base
+        if (page_len > 0x1000) page_len = 0x1000; // safety cap
+        if (dm32_read_block_retry(page, (uint16_t)page_len, 2) != 0) {
+            // Fallback: 16-byte segments across this page window
+            const uint32_t step = 0x10;
+            for (uint32_t off = 0; off < page_len; off += step) {
+                uint32_t chunk = (page_len - off < step) ? (page_len - off) : step;
+                if (dm32_read_block_retry(page + off, (uint16_t)chunk, 2) != 0) {
+                    overall_failures++;
+                }
+            }
+        }
+    }
+    return (overall_failures == 0) ? 0 : -1;
+}
 static void dm32_print_version(radio_device_t *radio, FILE *out)
 {
     fprintf(out, "Baofeng DM-32 (experimental)\n");
+    if (dm32_info_ready) {
+        if (dm32_board_id[0]) fprintf(out, "Board: %s\n", dm32_board_id);
+        if (dm32_fw_version[0]) fprintf(out, "Firmware Version: %s\n", dm32_fw_version);
+        if (dm32_build_date[0]) fprintf(out, "Build Date: %s\n", dm32_build_date);
+        if (dm32_contacts_ptr) fprintf(out, "Contacts Ptr: 0x%06X\n", dm32_contacts_ptr);
+    }
+}
+
+// Dynamic summary of the 4K pages actually read during this session
+static void dm32_print_pages_table(FILE *out)
+{
+    fprintf(out, "# DM-32 pages read (dynamic)\n");
+    fprintf(out, "# BaseAddr        Size    NonFF  Non00  Strings\n");
+    for (unsigned i = 0; i < dm32_read_addrs_n; ++i) {
+        uint32_t a = dm32_read_addrs[i];
+        uint32_t e = a + 0x1000;
+        if (dm32_written_max && e > dm32_written_max) e = dm32_written_max;
+        unsigned nonff = 0, non00 = 0, strings = 0;
+        uint32_t p = a;
+        while (p < e) { uint8_t b = radio_mem[p++]; if (b != 0xFF) nonff++; if (b != 0x00) non00++; }
+        p = a;
+        while (p < e) {
+            if (is_ascii_print(radio_mem[p])) {
+                unsigned k = 0; while (p < e && is_ascii_print(radio_mem[p]) && k < 64) { ++k; ++p; }
+                if (k >= 4) strings++;
+                continue;
+            }
+            p++;
+        }
+        fprintf(out, "0x%06X        0x%04X  %5u  %5u  %u\n", a, 0x1000, nonff, non00, strings);
+    }
 }
 
 static void dm32_download(radio_device_t *radio)
@@ -280,32 +535,45 @@ static void dm32_download(radio_device_t *radio)
     usleep(150000);
 
     // 1) Initial ASCII handshake (observe but ignore content)
+    fprintf(stderr, "DM32: performing initial handshake...\n");
     dm32_send_ascii("PSEARCH");
-    dm32_dump_reads(150);
+    unsigned char hbuf[512];
+    int hlen = dm32_collect_reads(hbuf, sizeof(hbuf), 200);
+    dm32_extract_board_id_from(hbuf, hlen);
 
     dm32_send_ascii("PASSSTA");
-    dm32_dump_reads(150);
+    hlen = dm32_collect_reads(hbuf, sizeof(hbuf), 200);
+    if (!dm32_board_id[0]) dm32_extract_board_id_from(hbuf, hlen);
 
     dm32_send_ascii("SYSINFO");
-    dm32_dump_reads(150);
+    hlen = dm32_collect_reads(hbuf, sizeof(hbuf), 250);
+    if (!dm32_board_id[0]) dm32_extract_board_id_from(hbuf, hlen);
 
     // 2) Version/info probes (CPS-like)
+    fprintf(stderr, "DM32: fetching version/info...\n");
     unsigned char v0[5] = {0x56, 0x00, 0x00, 0x40, 0x0D};
     (void)serial_write(v0, 5);
-    dm32_dump_reads(100);
+    {
+        uint8_t t, l; unsigned char pl[256];
+        if (dm32_read_v_frame(&t, &l, pl, sizeof(pl), 800) == 0) dm32_parse_v_reply(t, l, pl);
+    }
     for (int i = 1; i <= 16; ++i) {
         if (i == 12) continue; // 0x0C not observed
         unsigned char vv[5] = {0x56, 0x00, 0x00, 0x00, (unsigned char)i};
         (void)serial_write(vv, 5);
-        dm32_dump_reads(90);
+        uint8_t t, l; unsigned char pl[256];
+        if (dm32_read_v_frame(&t, &l, pl, sizeof(pl), 800) == 0) dm32_parse_v_reply(t, l, pl);
     }
+    dm32_info_ready = 1;
 
     // 3) Resource fetch (ignored)
+    fprintf(stderr, "DM32: fetching resources...\n");
     unsigned char g[6] = {0x47, 0x00, 0x00, 0x00, 0x00, 0x01};
     (void)serial_write(g, 6);
     dm32_dump_reads(200);
 
     // 4) Enter PROGRAM mode
+    fprintf(stderr, "DM32: entering PROGRAM mode...\n");
     static const unsigned char prog_preamble[] = {0xFF,0xFF,0xFF,0xFF,0x0C,'P','R','O','G','R','A','M'};
     (void)serial_write(prog_preamble, sizeof(prog_preamble));
     usleep(30000);
@@ -316,14 +584,41 @@ static void dm32_download(radio_device_t *radio)
     (void)serial_write(b06, sizeof(b06));
     dm32_dump_reads(120);
 
-    // 5) Reads: small probe then mapped blocks
-    (void) dm32_read_block_retry(0x008027, 4, 2);
-    dm32_dump_reads(50);
+    // 4a) Perform a brief priming sequence like OEM CPS: tiny reads in FF7F/FF8F space
+    // using a couple of common low-byte anchors (0x0C and 0x01) to gate in channel pages.
+    (void) dm32_read_block_retry(0xFF7F0C, 1, 1);
+    (void) dm32_read_block_retry(0xFF8F0C, 1, 1);
+    (void) dm32_read_block_retry(0xFF7F01, 1, 1);
+    (void) dm32_read_block_retry(0xFF8F01, 1, 1);
+    // Light poll of 0x01F0FF 4 KiB page observed in CPS traffic (acts as keep-alive/gate)
+    (void) dm32_read_block_retry(0x01F0FF, 0x1000, 1);
 
-    for (unsigned i = 0; i < dm32_nblocks; ++i) {
-        if (trace_flag) fprintf(stderr, "DM32: read block %u/%u at %06X len %u\n", i+1, dm32_nblocks, dm32_blocks[i].addr, dm32_blocks[i].len);
-        if (dm32_read_block_retry(dm32_blocks[i].addr, dm32_blocks[i].len, 2) != 0) {
-            fprintf(stderr, "DM32: failed to read block at %06X len %u\n", dm32_blocks[i].addr, dm32_blocks[i].len);
+    // 5) Dynamic reads based on V-frame partition map
+    // Read each V-segment in 4 KiB pages: size = mask+1. For blob/unknown stride segments,
+    // read only a 4 KiB window to seed heuristics, matching CPS behavior.
+    for (unsigned i = 0; i < dm32_nvsegs; ++i) {
+        uint8_t id = dm32_vsegs[i].id;
+        uint32_t base = dm32_vsegs[i].base;
+        uint32_t size = (uint32_t)dm32_vsegs[i].mask_le + 1u;
+        uint16_t stride = dm32_vsegs[i].stride_le;
+        if (stride == 0x00FF || stride == 0x0000) {
+            // Blob/unknown stride: read a small 4 KiB window so heuristics can probe
+            uint32_t win = (size > 0x1000) ? 0x1000 : size;
+            uint32_t page = (base & ~0xFFFu);
+            if (trace_flag) fprintf(stderr, "DM32: read-window V id=0x%02X (blob) @%06X size %u window %u\n", id, base, (unsigned)size, (unsigned)win);
+            (void) dm32_read_range(page, win);
+            dm32_mark_read(page);
+            continue;
+        }
+        if (trace_flag) fprintf(stderr, "DM32: read V id=0x%02X @%06X size %u (rec=%u)\n", id, base, (unsigned)size, (unsigned)stride);
+        // Page-aligned 4 KiB reads across the segment
+        uint32_t seg_start = (base & ~0xFFFu);
+        uint32_t seg_end = base + size;
+        for (uint32_t a = seg_start; a < seg_end; a += 0x1000) {
+            uint32_t chunk = (a + 0x1000 <= seg_end) ? 0x1000 : (seg_end - a);
+            if (chunk == 0) break;
+            (void) dm32_read_range(a, chunk);
+            dm32_mark_read(a);
         }
     }
 
@@ -422,15 +717,15 @@ static int is_slot_signature(uint32_t s, uint32_t end)
     return 0;
 }
 
-// Structured channel slot parser: base 0x00601C, stride 0x30, read ASCII until NUL,
-// allow 0-2 0xFF pad, then require known signature bytes. No hardcoded prefixes.
+// Structured channel slot parser: discover channel segment from V-frames (no static anchors),
+// read ASCII until NUL, skip pad, then require known signature bytes.
 static unsigned dm32_extract_channels(dm32_chan_t *chans, unsigned maxc)
 {
-    const uint32_t base = DM32_CHAN_BASE;
-    const uint32_t stride = DM32_CHAN_STRIDE;
-    const uint32_t limit = (dm32_written_max ? dm32_written_max : 0x008000);
+    uint32_t base; uint16_t stride; unsigned records;
+    if (!dm32_find_channel_segment(&base, &stride, &records)) return 0;
+    const uint32_t limit = (dm32_written_max ? dm32_written_max : (base + (uint32_t)stride * records));
     unsigned count = 0;
-    for (uint32_t p = base; p + 1 < limit && p < 0x010000; p += stride) {
+    for (uint32_t p = base; p + 1 < limit && p < base + (uint32_t)stride * records; p += stride) {
         dm32_channel_t ch;
         if (dm32_parse_slot(p, &ch) != 0) continue;
         if (count < maxc) {
@@ -554,8 +849,7 @@ static int dm32_parse_slot(uint32_t base, dm32_channel_t *out)
     uint32_t s = 0;
     char name[32];
     if (dm32_locate_signature(base, &s, name, sizeof(name)) != 0) return -1;
-    if (s + DM32_PARAMS_OFS + DM32_PARAMS_LEN > dm32_written_max) return -1;
-    out->offset = base;
+    // no-op
     out->sig_offset = s;
     strncpy(out->name, name, sizeof(out->name)-1);
     out->name[sizeof(out->name)-1] = 0;
@@ -696,11 +990,68 @@ static double decode_freq_mhz(const unsigned char *p, double rx_hint)
     return 0.0;
 }
 
+// Discover the channel segment (base + stride) from V-frames by testing records against dm32_parse_slot.
+// Returns 1 on success and fills out parameters; else returns 0 if not found.
+static int dm32_find_channel_segment(uint32_t *out_base, uint16_t *out_stride, unsigned *out_records)
+{
+    // Candidate record sizes commonly seen in DMR channel slots
+    static const uint16_t candidates[] = { 0x2C, 0x30, 0x34, 0x38, 0x40 };
+    uint32_t best_base = 0; uint16_t best_stride = 0; unsigned best_hits = 0; unsigned best_total = 0;
+    for (unsigned i = 0; i < dm32_nvsegs; ++i) {
+        uint32_t seg_base = dm32_vsegs[i].base;
+        uint32_t seg_size = (uint32_t)dm32_vsegs[i].mask_le + 1u;
+        uint16_t seg_stride = dm32_vsegs[i].stride_le;
+        if (!dm32_was_read(seg_base)) continue; // only consider segments with data in memory
+        uint32_t seg_end = seg_base + seg_size;
+        if (dm32_written_max && seg_end > dm32_written_max) seg_end = dm32_written_max;
+
+        // Try the advertised stride first if plausible
+        uint16_t try_list[1 + sizeof(candidates)/sizeof(candidates[0])];
+        unsigned try_n = 0;
+        if (seg_stride >= 0x10 && seg_stride <= 0x80 && seg_stride != 0x00FF && seg_stride != 0x0000) {
+            try_list[try_n++] = seg_stride;
+        }
+        for (unsigned k = 0; k < sizeof(candidates)/sizeof(candidates[0]); ++k) {
+            uint16_t s = candidates[k];
+            int seen = 0; for (unsigned m=0; m<try_n; ++m) if (try_list[m] == s) { seen = 1; break; }
+            if (!seen) try_list[try_n++] = s;
+        }
+
+        for (unsigned ti = 0; ti < try_n; ++ti) {
+            uint16_t stride = try_list[ti];
+            if (stride < 0x10 || stride > 0x80) continue;
+            // Try small alignment offsets in case the segment base isn't slot-aligned
+            for (unsigned align = 0; align < 8 && align < stride; ++align) {
+                unsigned total = 0, hits = 0;
+                // Sample up to first 256 records or until end of segment window
+                for (uint32_t p = seg_base + align; p + 1 < seg_end && total < 256; p += stride, ++total) {
+                    dm32_channel_t ch;
+                    if (dm32_parse_slot(p, &ch) == 0 && ch.rx_mhz >= 30.0 && ch.rx_mhz <= 1000.0) {
+                        hits++;
+                    }
+                }
+                if (hits > best_hits || (hits == best_hits && total > best_total)) {
+                    best_hits = hits; best_total = total; best_base = seg_base + align; best_stride = stride;
+                }
+            }
+        }
+    }
+    if (best_hits >= 2) {
+        if (out_base) *out_base = best_base;
+        if (out_stride) *out_stride = best_stride;
+        if (out_records) *out_records = best_total;
+        if (trace_flag) fprintf(stderr, "DM32: channel segment discovered @%06X stride=%u hits=%u/%u\n", best_base, (unsigned)best_stride, best_hits, best_total);
+        return 1;
+    }
+    if (trace_flag) fprintf(stderr, "DM32: channel segment NOT found via V-frames.\n");
+    return 0;
+}
+
 static void dm32_write_slots_debug_csv(void)
 {
-    const uint32_t base = DM32_CHAN_BASE;
-    const uint32_t stride = DM32_CHAN_STRIDE;
-    const uint32_t end = DM32_CHAN_BASE + DM32_CHAN_STRIDE * DM32_CHAN_WINDOW; // window
+    uint32_t base; uint16_t stride; unsigned records;
+    if (!dm32_find_channel_segment(&base, &stride, &records)) return;
+    uint32_t end = base + (uint32_t)stride * records;
     FILE *f = fopen("dm32_slots_debug.csv", "w");
     if (!f) return;
     fprintf(f, "slot,offset_hex,label,rx_bcd_mhz,tx_bcd_mhz,rx_f32_mhz,tx_f32_mhz,bytes_hex,params_hex16,sig_hex32\n");
@@ -768,13 +1119,13 @@ static void dm32_write_slots_debug_csv(void)
 // Write a CSV with parsed fields per channel slot: label, RX/TX MHz (BCD), timeslot (1/2), and the 16-byte params blob for diffing
 static void dm32_write_channels_fields_csv(void)
 {
-    const uint32_t base = DM32_CHAN_BASE;
-    const uint32_t stride = DM32_CHAN_STRIDE;
-    const uint32_t end = DM32_CHAN_BASE + DM32_CHAN_STRIDE * DM32_CHAN_WINDOW; // window
+    uint32_t base; uint16_t stride; unsigned records;
+    if (!dm32_find_channel_segment(&base, &stride, &records)) return;
+    uint32_t end = base + (uint32_t)stride * records;
     FILE *f = fopen("dm32_channels_fields.csv", "w");
     if (!f) return;
     fprintf(f, "slot,offset_hex,label,rx_mhz,tx_mhz,timeslot,power,color_code,params_hex16\n");
-    for (unsigned i = 0; i < DM32_CHAN_WINDOW; ++i) {
+    for (unsigned i = 0; i < 240; ++i) {
         uint32_t p = base + i * stride;
         if (p + 1 >= dm32_written_max || p >= end) break;
         dm32_channel_t ch;
@@ -803,58 +1154,73 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
     // Match examples convention: print radio name header first.
     fprintf(out, "Radio: %s\n", radio->name);
 
+    // Print dynamic summary of pages read (no static layout assumed)
+    dm32_print_pages_table(out);
+    fprintf(out, "\n");
+
     fprintf(out, "# DM-32: region map (experimental)\n");
-    for (unsigned i = 0; i < dm32_nblocks; ++i) {
-        uint32_t a = dm32_blocks[i].addr;
-        uint32_t e = a + dm32_blocks[i].len;
-        unsigned nonff = 0, non00 = 0;
-        unsigned strings = 0;
-        char sample1[40] = {0}, sample2[40] = {0};
-        // Scan bytes within safe bounds of radio_mem
-        if (e > dm32_written_max) e = dm32_written_max;
-        uint32_t p = a;
-        while (p < e) {
-            uint8_t b = radio_mem[p++];
-            if (b != 0xff) nonff++;
-            if (b != 0x00) non00++;
-        }
-        // Find up to two sample printable strings
-        p = a;
-        while (p < e) {
-            if (is_ascii_print(radio_mem[p])) {
-                char buf[64];
-                unsigned k = 0;
-                while (p < e && is_ascii_print(radio_mem[p]) && k < sizeof(buf)-1) buf[k++] = radio_mem[p++];
-                buf[k] = 0;
-                if (k >= 4) {
-                    strings++;
-                    if (!sample1[0]) strncpy(sample1, buf, sizeof(sample1)-1);
-                    else if (!sample2[0]) { strncpy(sample2, buf, sizeof(sample2)-1); }
+    // Summarize V-frame based segments if available; otherwise fall back to legacy blocks
+    if (dm32_nvsegs) {
+        for (unsigned i = 0; i < dm32_nvsegs; ++i) {
+            uint32_t a = dm32_vsegs[i].base;
+            uint32_t e = a + ((uint32_t)dm32_vsegs[i].mask_le + 1u);
+            unsigned nonff = 0, non00 = 0, strings = 0;
+            char sample1[40] = {0}, sample2[40] = {0};
+            if (e > dm32_written_max) e = dm32_written_max;
+            uint32_t p = a;
+            while (p < e) { uint8_t b = radio_mem[p++]; if (b != 0xff) nonff++; if (b != 0x00) non00++; }
+            p = a;
+            while (p < e) {
+                if (is_ascii_print(radio_mem[p])) {
+                    char buf[64]; unsigned k = 0;
+                    while (p < e && is_ascii_print(radio_mem[p]) && k < sizeof(buf)-1) buf[k++] = radio_mem[p++];
+                    buf[k] = 0;
+                    if (k >= 4) { strings++; if (!sample1[0]) strncpy(sample1, buf, sizeof(sample1)-1); else if (!sample2[0]) strncpy(sample2, buf, sizeof(sample2)-1); }
+                    continue;
                 }
-                // Skip non-printables between strings
-                continue;
+                p++;
             }
-            p++;
+            fprintf(out, "V id=0x%02X 0x%06X..0x%06X size=%u rec=%u nonFF=%u non00=%u strings=%u\n",
+                    dm32_vsegs[i].id, a, (unsigned)(e-1), (unsigned)((uint32_t)dm32_vsegs[i].mask_le+1u), (unsigned)dm32_vsegs[i].stride_le, nonff, non00, strings);
+            if (sample1[0]) fprintf(out, "  e.g. '%s'\n", sample1);
+            if (sample2[0]) fprintf(out, "       '%s'\n", sample2);
         }
-        const char *hint = "";
-        if (strstr(sample1, "Contacts") || strstr(sample2, "Contacts")) hint = " (contacts?)";
-        else if (strstr(sample1, "Roam") || strstr(sample2, "Roam")) hint = " (roam?)";
-        else if (strings > 10 && a >= 0x006000 && a < 0x007000) hint = " (channel/zone labels?)";
-        fprintf(out, "0x%06X..0x%06X size=%u nonFF=%u non00=%u strings=%u%s\n",
-                a, a + dm32_blocks[i].len - 1, dm32_blocks[i].len, nonff, non00, strings, hint);
-        if (sample1[0]) fprintf(out, "  e.g. '%s'\n", sample1);
-        if (sample2[0]) fprintf(out, "       '%s'\n", sample2);
+    } else {
+        // Fallback: summarize regions across the pages we have actually read
+        for (unsigned i = 0; i < dm32_read_addrs_n; ++i) {
+            uint32_t a = dm32_read_addrs[i];
+            uint32_t e = a + 0x1000;
+            unsigned nonff = 0, non00 = 0;
+            unsigned strings = 0;
+            char sample1[40] = {0}, sample2[40] = {0};
+            if (e > dm32_written_max) e = dm32_written_max;
+            uint32_t p = a;
+            while (p < e) { uint8_t b = radio_mem[p++]; if (b != 0xff) nonff++; if (b != 0x00) non00++; }
+            p = a;
+            while (p < e) {
+                if (is_ascii_print(radio_mem[p])) {
+                    char buf[64]; unsigned k = 0;
+                    while (p < e && is_ascii_print(radio_mem[p]) && k < sizeof(buf)-1) buf[k++] = radio_mem[p++];
+                    buf[k] = 0;
+                    if (k >= 4) { strings++; if (!sample1[0]) strncpy(sample1, buf, sizeof(sample1)-1); else if (!sample2[0]) strncpy(sample2, buf, sizeof(sample2)-1); }
+                    continue;
+                }
+                p++;
+            }
+            const char *hint = "";
+            if (strstr(sample1, "Contacts") || strstr(sample2, "Contacts")) hint = " (contacts?)";
+            else if (strstr(sample1, "Roam") || strstr(sample2, "Roam")) hint = " (roam?)";
+            fprintf(out, "0x%06X..0x%06X size=%u nonFF=%u non00=%u strings=%u%s\n",
+                    a, a + 0x1000 - 1, 0x1000u, nonff, non00, strings, hint);
+            if (sample1[0]) fprintf(out, "  e.g. '%s'\n", sample1);
+            if (sample2[0]) fprintf(out, "       '%s'\n", sample2);
+        }
     }
 
-    // Before Zones, emit channel tables in examples format using what we know.
-    // Parse digital-like slots from the first window.
-    const uint32_t ch_base = DM32_CHAN_BASE;
-    const uint32_t ch_end  = DM32_CHAN_BASE + DM32_CHAN_STRIDE * DM32_CHAN_WINDOW;
-    unsigned printed = 0;
-    for (uint32_t p = ch_base; p < ch_end && p < dm32_written_max; p += DM32_CHAN_STRIDE) {
-        dm32_channel_t tmp;
-        if (dm32_parse_slot(p, &tmp) == 0) { printed = 1; break; }
-    }
+
+    // Before Zones, emit channel tables in examples format using dynamically discovered channel segment.
+    uint32_t ch_base; uint16_t ch_stride; unsigned ch_records;
+    unsigned printed = dm32_find_channel_segment(&ch_base, &ch_stride, &ch_records);
     if (printed) {
         // Digital channels table.
         fprintf(out, "\n");
@@ -876,7 +1242,8 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
         fprintf(out, "Digital Name             Receive   Transmit Power Scan TOT RO Admit  Color Slot RxGL TxContact\n");
 
     unsigned idx = 1;
-    for (uint32_t p = ch_base; p < ch_end && p < dm32_written_max; p += DM32_CHAN_STRIDE) {
+    uint32_t ch_end = ch_base + (uint32_t)ch_stride * ch_records;
+    for (uint32_t p = ch_base; p < ch_end && p < dm32_written_max; p += ch_stride) {
         dm32_channel_t ch;
         if (dm32_parse_slot(p, &ch) != 0) continue;
         // Name to 16 chars, spaces->'_' like examples
@@ -919,13 +1286,12 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
     }
 
     // Zones: emit examples-style table with sequential numbering and unknown members as '-'.
-    const uint32_t ZONES_MAX_ADDR = 0x010000;
     dm32_zone_t zones[128];
     unsigned nz = 0;
-    for (unsigned i = 0; i < dm32_nblocks; ++i) {
-        uint32_t a = dm32_blocks[i].addr;
-        uint32_t e = a + dm32_blocks[i].len;
-        if (a >= ZONES_MAX_ADDR) continue;
+    // Scan within pages we read for zone-like names
+    for (unsigned i = 0; i < dm32_read_addrs_n; ++i) {
+        uint32_t a = dm32_read_addrs[i];
+        uint32_t e = a + 0x1000;
         if (e > dm32_written_max) e = dm32_written_max;
         uint32_t p = a;
         while (p < e) {
@@ -943,25 +1309,7 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
             p++;
         }
     }
-    // Filter to the clean, short zone-name table observed at low addresses (<0x002000).
-    // This yields concise names like 'Richmond', 'Goochland', etc.
-    dm32_zone_t clean[128];
-    unsigned nclean = 0;
-    for (unsigned i=0; i<nz; ++i) {
-        size_t len = strlen(zones[i].name);
-        if (zones[i].off < 0x002000 && len > 0 && len <= 16) {
-            // Dedup into clean list preserving discovery order
-            int dup = 0; for (unsigned t=0; t<nclean; ++t) {
-                if (strncmp(clean[t].name, zones[i].name, sizeof(clean[t].name)) == 0) { dup = 1; break; }
-            }
-            if (!dup && nclean < (sizeof(clean)/sizeof(clean[0]))) {
-                clean[nclean] = zones[i];
-                nclean++;
-            }
-        }
-    }
-
-    if (nclean) {
+    if (nz) {
         fprintf(out, "\n");
         if (verbose) {
             fprintf(out, "# Table of channel zones.\n");
@@ -971,25 +1319,40 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
             fprintf(out, "#\n");
         }
         fprintf(out, "Zone    Name             Channels\n");
-        for (unsigned i=0; i<nclean; ++i) {
+        for (unsigned i=0; i<nz; ++i) {
             // Zone numbers start at 1, names padded to 16 characters max like examples
-            fprintf(out, "%4u    %-16.16s -\n", i+1, clean[i].name);
+            fprintf(out, "%4u    %-16.16s -\n", i+1, zones[i].name);
         }
     }
 
     // Also write a CSV for offline mapping
     FILE *csv = fopen("dm32_zones.csv", "w");
     if (csv) {
-        // Focus on the short zone-name table observed at low addresses (<0x002000).
-        // This yields clean zone names like 'Richmond', 'Goochland', etc.
         fprintf(csv, "offset_hex,name\n");
-        for (unsigned i=0; i<nclean; ++i) fprintf(csv, "%06X,%s\n", clean[i].off, clean[i].name);
+        for (unsigned i=0; i<nz; ++i) fprintf(csv, "%06X,%s\n", zones[i].off, zones[i].name);
         fclose(csv);
     }
 
-    // Structured channel extraction from fixed slots
+    // Structured channel extraction from the discovered channel segment
     dm32_chan_t chans[128];
-    unsigned nc = dm32_extract_channels(chans, (unsigned)(sizeof(chans)/sizeof(chans[0])));
+    unsigned nc = 0;
+    {
+        uint32_t base; uint16_t stride; unsigned records;
+        if (dm32_find_channel_segment(&base, &stride, &records)) {
+            uint32_t end = base + (uint32_t)stride * records;
+            for (unsigned i=0; i<128; ++i) {
+                uint32_t p = base + i * stride; if (p + 1 >= dm32_written_max || p >= end) break;
+                dm32_channel_t ch;
+                if (dm32_parse_slot(p, &ch) != 0) continue;
+                if (nc < (unsigned)(sizeof(chans)/sizeof(chans[0]))) {
+                    chans[nc].off = p;
+                    strncpy(chans[nc].name, ch.name, sizeof(chans[nc].name)-1);
+                    chans[nc].name[sizeof(chans[nc].name)-1] = 0;
+                    nc++;
+                }
+            }
+        }
+    }
 
     FILE *ccsv = fopen("dm32_channels.csv", "w");
     if (ccsv) {
@@ -1034,11 +1397,10 @@ static void dm32_write_csv(radio_device_t *radio, FILE *csv)
     // Collect heuristic zones and channels from the image.
     dm32_zone_t zones[256];
     unsigned nz = 0;
-    const uint32_t ZONES_MAX_ADDR = 0x010000;
-    for (unsigned i = 0; i < dm32_nblocks; ++i) {
-        uint32_t a = dm32_blocks[i].addr;
-        uint32_t e = a + dm32_blocks[i].len;
-        if (a >= ZONES_MAX_ADDR) continue;
+    // Heuristic scan for zones across pages we read
+    for (unsigned i = 0; i < dm32_read_addrs_n; ++i) {
+        uint32_t a = dm32_read_addrs[i];
+        uint32_t e = a + 0x1000;
         if (e > dm32_written_max) e = dm32_written_max;
         uint32_t p = a;
         while (p < e) {
