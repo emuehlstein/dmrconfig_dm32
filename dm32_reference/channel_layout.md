@@ -6,7 +6,6 @@ This document summarizes the current understanding of the DM‑32 channel slot s
 
 
 - Channel slots appear in a fixed window starting at 0x00601C with a stride of 0x30 (48) bytes per slot.
-- In the current tool, we scan the first 240 slots: offset = 0x00601C + 0x30 * slot.
 - DM‑32 advertises up to 4,000 channels; additional banks beyond this first window are not mapped yet.
 
 ## Slot structure (high level)
@@ -59,7 +58,7 @@ Common constants/unexplained bytes (stable across many channels; mapping in prog
 - params[9]..[12] typically FF FF FF FF (filler)
 - params[13] varies between C0 and E0 across groups (band/region/contact table linkage?); params[14] often 01; params[15] 00 or FF.
 
-## Examples from real slots
+## Examples from real slots (dmrva example)
 
 - “RIC RVA Metro” (slot 0)
   - params: 10 00 0B 20 20 01 00 80 00 FF FF FF FF C0 01 00
