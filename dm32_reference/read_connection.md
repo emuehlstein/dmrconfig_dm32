@@ -204,55 +204,53 @@ Notes:
 
 ### 4. Order of observed 4 KiB reads
 
-Representative 4 KiB reads emitted by the CPS in the captures (addresses within the same 0x1000 page may vary by a few bytes):
 
-1. `52 00 A0 0A 00 10`  → 0x00A00A (Channel data, first page)
-2. `52 00 50 01 00 10`  → 0x005001 (Channel data, second page)
-3. `52 00 70 01 00 10`  → 0x007001 (Channel data, third page)
-4. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
-5. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD, repeated)
-5. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
-6. `52 00 30 07 00 10`  → 0x003007 (TBD)
-7. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
-8. `52 00 20 07 00 10`  → 0x002007 (TBD)
-9. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
-8. `52 00 A0 02 00 10`  TBD
-9. `52 00 d0 0a 00 10`
-9. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
-10. `52 00 00 02 00 10`
-11. `52 00 20 00 00 10`
-12. `52 01 f0 ff 00 10`
-13. `52 00 10 04 00 10`
-14. `52 00 20 0a 00 10`
-15. `52 01 f0 ff 00 10`
-16. `52 01 f0 ff 00 10`
-17. `52 01 f0 ff 00 10`
-18. `52 01 f0 ff 00 10`
-19. `52 01 f0 ff 00 10`
-20. `52 01 f0 ff 00 10`
-21. `52 01 f0 ff 00 10`
-22. `52 01 f0 ff 00 10`
-23. `52 01 f0 ff 00 10`
-24. `52 01 f0 ff 00 10`
-25. `52 01 f0 ff 00 10`
-26. `52 00 d0 00 00 10`
-27. `52 00 b0 00 00 10` (scanlists?)
-28. `52 00 50 03 00 10` (zones?)
-29. `52 00 a0 06 00 10` (high entropy, no strings)
-30. `52 00 10 01 00 10` (encryption?)
-31. `52 00 60 03 00 10` (welcome message)
-32. `52 00 f0 00 00 10` tbd
-33. `52 00 c0 00 00 10` (emergency & alerts) ((V-frame 0x09?)
-34. `52 00 b0 06 00 10` (scanlists)
-35. `52 00 80 01 00 10` (roam)
-36. `52 00 d0 01 00 10` (roam continuted)
-37. `52 00 90 00 00 10` (dmr id) (V-frame 0x07?)
-38. `52 00 80 27 00 10` (contacts) (V-frame 0x0F) 
+Actual order of 4 KiB reads observed in the dmrva capture (addresses within the same 0x1000 page may vary by a few bytes):
 
+1.  `52 00 a0 0a 00 10`  → 0x00A00A (Channel data, first page)
+2.  `52 00 50 01 00 10`  → 0x005001 (Channel data, second page)
+3.  `52 00 70 01 00 10`  → 0x007001 (Channel data, third page)
+4.  `52 01 f0 ff 00 10`  → 0x01F0FF (padding/guard)
+5.  `52 01 f0 ff 00 10`  → 0x01F0FF
+6.  `52 01 f0 ff 00 10`  → 0x01F0FF
+7.  `52 00 30 07 00 10`  → 0x003007
+8.  `52 01 f0 ff 00 10`  → 0x01F0FF
+9.  `52 00 20 07 00 10`  → 0x002007
+10. `52 01 f0 ff 00 10`  → 0x01F0FF
+11. `52 00 a0 02 00 10`  → 0x00A002
+12. `52 00 d0 0a 00 10`  → 0x00D00A
+13. `52 01 f0 ff 00 10`  → 0x01F0FF
+14. `52 00 00 02 00 10`  → 0x000002
+15. `52 00 20 00 00 10`  → 0x002000
+16. `52 01 f0 ff 00 10`  → 0x01F0FF
+17. `52 00 10 04 00 10`  → 0x001004
+18. `52 00 20 0a 00 10`  → 0x00200A
+19. `52 01 f0 ff 00 10`  → 0x01F0FF
+20. `52 01 f0 ff 00 10`  → 0x01F0FF
+21. `52 01 f0 ff 00 10`  → 0x01F0FF
+22. `52 01 f0 ff 00 10`  → 0x01F0FF
+23. `52 01 f0 ff 00 10`  → 0x01F0FF
+24. `52 01 f0 ff 00 10`  → 0x01F0FF
+25. `52 01 f0 ff 00 10`  → 0x01F0FF
+26. `52 01 f0 ff 00 10`  → 0x01F0FF
+27. `52 01 f0 ff 00 10`  → 0x01F0FF
+28. `52 01 f0 ff 00 10`  → 0x01F0FF
+29. `52 01 f0 ff 00 10`  → 0x01F0FF
+30. `52 00 d0 00 00 10`  → 0x00D000
+31. `52 00 b0 00 00 10`  → 0x00B000 (scanlists?)
+32. `52 00 50 03 00 10`  → 0x005003 (zones?)
+33. `52 00 a0 06 00 10`  → 0x00A006 (high entropy, no strings)
+34. `52 00 10 01 00 10`  → 0x001001 (encryption?)
+35. `52 00 60 03 00 10`  → 0x006003 (welcome message)
+36. `52 00 f0 00 00 10`  → 0x00F000
+37. `52 00 c0 00 00 10`  → 0x00C000 (emergency & alerts)
+38. `52 00 b0 06 00 10`  → 0x00B006 (scanlists)
+39. `52 00 80 01 00 10`  → 0x008001 (roam)
+40. `52 00 d0 01 00 10`  → 0x00D001 (roam continued)
+41. `52 00 90 00 00 10`  → 0x009000 (dmr id)
+42. `52 00 80 27 00 10`  → 0x008027 (contacts)
 
-Also seen repeatedly:
-
-- `52 01 F0 FF 00 10` → 0x01F0FF (likely a guard/keep‑alive page; inflates image high‑water mark to ~0x200FF when included)
+Note: The repeated `52 01 f0 ff 00 10` reads (0x01F0FF) are session padding/guard reads and may appear more or fewer times depending on the session, but the above order matches the dmrva capture.
 
  
 
