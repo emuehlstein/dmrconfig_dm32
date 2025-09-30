@@ -206,28 +206,49 @@ Notes:
 
 Representative 4 KiB reads emitted by the CPS in the captures (addresses within the same 0x1000 page may vary by a few bytes):
 
-- `52 00 50 01 00 10` → 0x005001 (Channel data)
-- `52 00 70 01 00 10` → 0x007001 (channel data)
-- `52 00 B0 06 00 10` → 0x00B006 (scan lists?)
-- `52 00 30 07 00 10` → 0x003007
-- `52 00 20 07 00 10` → 0x002007
-- `52 00 A0 02 00 10` → 0x00A002
-- `52 00 A0 0A 00 10` → 0x00A00A (primary Channel data)
-- `52 00 D0 0A 00 10` → 0x00D00A
-- `52 00 00 02 00 10` → 0x000002
-- `52 00 20 00 00 10` → 0x002000
-- `52 00 10 04 00 10` → 0x001004
-- `52 00 90 04 00 10` → 0x009004
-- `52 00 F0 03 00 10` → 0x00F003
-- `52 00 30 00 00 10` → 0x003000
-- `52 00 10 03 00 10` → 0x001003
-- `52 00 80 02 00 10` → 0x008002
-- `52 00 40 08 00 10` → 0x004008
-- `52 00 80 00 00 10` → 0x008000 (contacts/labels vicinity)
-- `52 00 A0 00 00 10` → 0x00A000
-- `52 00 B0 00 00 10` → 0x00B000 (talkgroups)
-- `52 00 00 01 00 10` → 0x000001 (zones page in this capture)
-- `52 00 C0 00 00 10` → 0x00C000 (emergency/encryption vicinity)
+1. `52 00 A0 0A 00 10`  → 0x00A00A (Channel data, first page)
+2. `52 00 50 01 00 10`  → 0x005001 (Channel data, second page)
+3. `52 00 70 01 00 10`  → 0x007001 (Channel data, third page)
+4. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
+5. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD, repeated)
+5. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
+6. `52 00 30 07 00 10`  → 0x003007 (TBD)
+7. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
+8. `52 00 20 07 00 10`  → 0x002007 (TBD)
+9. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
+8. `52 00 A0 02 00 10`  TBD
+9. `52 00 d0 0a 00 10`
+9. `52 01 F0 FF 00 10`  → 0x01F0FF (TBD)
+10. `52 00 00 02 00 10`
+11. `52 00 20 00 00 10`
+12. `52 01 f0 ff 00 10`
+13. `52 00 10 04 00 10`
+14. `52 00 20 0a 00 10`
+15. `52 01 f0 ff 00 10`
+16. `52 01 f0 ff 00 10`
+17. `52 01 f0 ff 00 10`
+18. `52 01 f0 ff 00 10`
+19. `52 01 f0 ff 00 10`
+20. `52 01 f0 ff 00 10`
+21. `52 01 f0 ff 00 10`
+22. `52 01 f0 ff 00 10`
+23. `52 01 f0 ff 00 10`
+24. `52 01 f0 ff 00 10`
+25. `52 01 f0 ff 00 10`
+26. `52 00 d0 00 00 10`
+27. `52 00 b0 00 00 10` (scanlists?)
+28. `52 00 50 03 00 10` (zones?)
+29. `52 00 a0 06 00 10` (high entropy, no strings)
+30. `52 00 10 01 00 10` (encryption?)
+31. `52 00 60 03 00 10` (welcome message)
+32. `52 00 f0 00 00 10` tbd
+33. `52 00 c0 00 00 10` (emergency & alerts) ((V-frame 0x09?)
+34. `52 00 b0 06 00 10` (scanlists)
+35. `52 00 80 01 00 10` (roam)
+36. `52 00 d0 01 00 10` (roam continuted)
+37. `52 00 90 00 00 10` (dmr id) (V-frame 0x07?)
+38. `52 00 80 27 00 10` (contacts) (V-frame 0x0F) 
+
 
 Also seen repeatedly:
 
@@ -320,7 +341,8 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 
 ## quick memory map (observed)
 
-- 0x006000–0x006FFF: String‑heavy labels (channel/zone names). Reads around 0x0060xx are common.
+- 0x006000–0x006FFF: String-heavy label bank (channel/zone names mirrored for UI). Reads around 0x0060xx are common but no longer the authoritative slot source.
+- 0x00A00A–0x00AFFF: Primary channel slots (see `channel_layout.md`). Begins with count word and 0x30-byte records per channel.
 - 0x008000–0x008FFF: Contacts/Talkgroups index vicinity; V‑frame pointer to 0x008027 confirmed; dword at 0x008027 often `0x00000001`.
 - 0x009000–0x009FFF: Continuation of labels and/or analog label windows.
 - 0x00D000–0x00DFFF: Roam/label/UI strings vicinity (anchors vary by build; adjacent 0x00D00x often populated).
@@ -371,9 +393,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - Cross‑validate by matching implied capacities (segment_size/record_size) against exported CSV counts (e.g., zones used ≤ 128; talkgroups used ≤ ~451).
 - The `0x01F0FF` 4 KiB reads are likely session housekeeping; omit them for a compact logical image without losing user data.
 - Tooling:
-  - `tools/parse_vframes.py` — extract and decode V‑frames from captures
-  - `tools/dm32_dynamic_dump.py` — live dynamic dump of V‑segments to files (plus index.json)
-  - `tools/dm32_analyze_dump.py` — analyze dumped segments (ASCII density, record counts, quick heuristics)
+  - `tools/dm32_cps_emulator.py` — low‑level procedural host script that reproduces the CPS handshake, enumerates V‑frames, and can fetch pages directly from a connected DM‑32UV for validation.
 
 ## V‑frame quick reference
 
