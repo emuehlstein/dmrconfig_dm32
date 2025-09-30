@@ -9,11 +9,12 @@ It is grounded in the latest capture logs:
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_read.txt`
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_write.txt`
 - `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_read.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_write.txt`
 
 and cross‑checked against the extracted content in:
 
 - `dm32_reference/exports/factory/` (CSV reference matching factory data)
-- `dm32_reference/exports/dmrva/20250915-211402/` (CSV reference matching the dmrva data and captures)
+- `dm32_reference/exports/dmrva/` (CSV reference matching the dmrva data and captures)
 
 ## high‑level flow
 
@@ -26,7 +27,7 @@ and cross‑checked against the extracted content in:
 
 Notes:
 
-- In these captures, these tokens are sent without trailing CR (0x0D). The logger shows 7‑byte writes with no 0x0D.
+- In these captures, these tokens are sent without trailing CR (0x0D). The logger shows 7‑byte writes with no 0x0D appended beyond the literal ASCII payload.
 - Radio replies with short status bursts, e.g.: `06 44 50 35 37 30 55 56` → “.DP570UV”.
 - PASSSTA reply varies by unit/build: seen as `50 FF FF` in some sessions and `50 00 00` in others.
 
@@ -38,7 +39,7 @@ Notes:
 
 Termination detail:
 
-- Only the first probe `56 00 00 40` is CR‑terminated (`0x0D`) in the capture; subsequent `56 00 00 00 xx` probes are sent without CR and still succeed.
+- Only the first probe `56 00 00 40` embeds an explicit `0x0D` as its fifth byte in the capture; subsequent `56 00 00 00 xx` probes are sent without any trailing carriage return and still succeed.
 
 Reply structure:
 
@@ -202,16 +203,17 @@ Notes:
 - The CPS issues many single‑byte reads in the 0xFFxxxx range (`52 FF .. .. 01 00`), likely status/keepalive probes.
 - Substantive data is fetched in 4 KiB pages from a fixed set of addresses.
 
-## observed 4 KiB read set (examples)
+### 4. Order of observed 4 KiB reads
 
 Representative 4 KiB reads emitted by the CPS in the captures (addresses within the same 0x1000 page may vary by a few bytes):
 
-- `52 00 50 01 00 10` → 0x005001 (channel data window)
-- `52 00 70 01 00 10` → 0x007001 (channel data window)
-- `52 00 B0 06 00 10` → 0x00B006 (scan lists)
+- `52 00 50 01 00 10` → 0x005001 (Channel data)
+- `52 00 70 01 00 10` → 0x007001 (channel data)
+- `52 00 B0 06 00 10` → 0x00B006 (scan lists?)
 - `52 00 30 07 00 10` → 0x003007
 - `52 00 20 07 00 10` → 0x002007
 - `52 00 A0 02 00 10` → 0x00A002
+- `52 00 A0 0A 00 10` → 0x00A00A (primary Channel data)
 - `52 00 D0 0A 00 10` → 0x00D00A
 - `52 00 00 02 00 10` → 0x000002
 - `52 00 20 00 00 10` → 0x002000
@@ -245,8 +247,12 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - Zones
   - `id=0x08`: base `0x000018`, 4 KiB, 32‑byte records → capacity 128. Your exports (e.g., GBFMcCall/dmrva) show ≪128 zones used, which fits.
 
+- Channel slot page
+  - The CPS issues `52 00 A0 0A 00 10` immediately after entering PROGRAM mode. The returned 4 KiB block begins with a little-endian channel count (factory sample: 0x0019) followed by 0x30-byte channel records (label, RX/TX BCD, 24-byte parameter block). Full field mapping is captured in `dm32_reference/channel_layout.md`.
+  - Additional channel banks at 0x005001 and 0x007001 are fetched in the same session but decode to all zeros in the factory codeplug; treat them as reserved capacity until populated samples appear.
+
 - Channel‑related tables (indices/memberships)
-  - `id=0x07` (40 KiB, 20‑byte records) and `id=0x0A` (36 KiB, 12‑byte records) are strong candidates for compact per‑channel or membership tables (e.g., zone→channel or channel flags). The true bulk channel bodies may still be elsewhere; use these as authoritative heads to enumerate entries.
+  - `id=0x07` (40 KiB, 20-byte records) and `id=0x0A` (36 KiB, 12-byte records) are strong candidates for compact per-channel or membership tables (e.g., zone→channel or channel flags). The true bulk channel bodies now live in the 0x00A00A page; use the tuples to discover how many records to expect.
 
 - RX Groups / Scan Lists / Lists
   - `id=0x0E` (24 KiB, 23‑byte records) and `id=0x06` (20 KiB, 38‑byte records) look like list/index tables. Correlate counts against CSVs to decide which is RX groups vs. scan lists in a given codeplug.
@@ -262,21 +268,23 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - CPS reads `0x00B006` (scan lists) and `0x00F003` (RX groups) in this capture, matching our map.
   - OEM exports include strings like “RX Group 1” / “Scan List 1”; the exact page holding these ASCII strings may vary across builds within the `0x00B0xx/0x00F0xx` regions.
 
-- Channel slot structure (experimental)
-  - Parser (`dm32.c`) expects channel slots near label pages with an 8‑byte RX/TX frequency block (BCD) and parameter bytes. Current constants: `DM32_CHAN_BASE = 0x00601C`, `DM32_CHAN_STRIDE = 0x30` (48 bytes). Provisional but not contradicted by captures.
+- Channel slot structure
+  - Verified: 0x30-byte records in the 0x00A00A page contain label, RX/TX BCD, and a 24-byte parameter block (mode, colour code, encryption, signalling). See `channel_layout.md` for byte-by-byte mapping and correlations to CPS exports.
 
 ## expected image size
 
 - OEM CPS “factory codeplug” (`dm32_reference/code_plugs/factory.data`) is 659,456 bytes (0xA1000) with substantial 0xFF/0x00 fill and UI/message strings.
 - A read session fetches multiple 4 KiB pages and many 1‑byte `0xFFxx` probes, not a contiguous span.
 - `device.img` typically ends at 0x200FF when including `0x01F0FF`. Omitting that guard page reduces size without losing user data.
+- Write sessions captured in `serial_capture_*_write.txt` rewrite the entire 0xA1000 image in aligned 4 KiB blocks rather than issuing minimal deltas.
 - For a compact logical image:
   - write a sparse file with only fetched pages at true addresses; or
   - serialize just structures of interest (channels, contacts, zones, etc.).
 
 ## quick memory map (observed)
 
-- 0x006000–0x006FFF: String‑heavy labels (channel/zone names). Reads around 0x0060xx are common.
+- 0x006000–0x006FFF: String-heavy label bank (channel/zone names mirrored for UI). Reads around 0x0060xx are common but no longer the authoritative slot source.
+- 0x00A00A–0x00AFFF: Primary channel slots (see `channel_layout.md`). Begins with count word and 0x30-byte records per channel.
 - 0x008000–0x008FFF: Contacts/Talkgroups index vicinity; V‑frame pointer to 0x008027 confirmed; dword at 0x008027 often `0x00000001`.
 - 0x009000–0x009FFF: Continuation of labels and/or analog label windows.
 - 0x00D000–0x00DFFF: Roam/label/UI strings vicinity (anchors vary by build; adjacent 0x00D00x often populated).
@@ -299,7 +307,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 ## cross‑reference: CSVs ↔ memory
 
 - `exports/factory/factory_channels.csv`
-  - Channels map to slots in 0x006000..0x009FFF; labels visible in 0x0060xx/0x0080xx/0x0090xx.
+  - Channels map to the 0x00A00A slot page (see `channel_layout.md` for record layout). Labels and parameters extracted from the 0x30-byte records match the CSV export exactly, including DX contacts, APRS flags, and analog signalling entries.
 - `exports/factory/factory_contacts.csv`
   - Contacts map to the 0x008000 page; V‑frame 0x0F pointer (0x008027) and CPS 4‑byte probe corroborate this region.
 - `exports/factory/factory_rxgroups.csv`, `exports/factory/factory_scanlist.csv`
@@ -327,9 +335,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - Cross‑validate by matching implied capacities (segment_size/record_size) against exported CSV counts (e.g., zones used ≤ 128; talkgroups used ≤ ~451).
 - The `0x01F0FF` 4 KiB reads are likely session housekeeping; omit them for a compact logical image without losing user data.
 - Tooling:
-  - `tools/parse_vframes.py` — extract and decode V‑frames from captures
-  - `tools/dm32_dynamic_dump.py` — live dynamic dump of V‑segments to files (plus index.json)
-  - `tools/dm32_analyze_dump.py` — analyze dumped segments (ASCII density, record counts, quick heuristics)
+  - `tools/dm32_cps_emulator.py` — low‑level procedural host script that reproduces the CPS handshake, enumerates V‑frames, and can fetch pages directly from a connected DM‑32UV for validation.
 
 ## V‑frame quick reference
 

@@ -4,77 +4,56 @@ This document summarizes the current understanding of the DM‑32 channel slot s
 
 ## Addressing and slot window
 
-
-- Channel slots appear in a fixed window starting at 0x00601C with a stride of 0x30 (48) bytes per slot.
-- DM‑32 advertises up to 4,000 channels; additional banks beyond this first window are not mapped yet.
+- Primary channel records live in a 4 KiB page starting at address **0x00A00A**. The CPS always fetches this block first (`52 00 A0 0A 00 10`).
+- Additional channel banks appear to be reserved at 0x005001 and 0x007001. In the factory image they contain all zeros; treat them as future expansion banks.
+- Each page begins with a 16-byte header:
+  - `0x0000–0x0003` — little-endian channel count (factory image: `0x0019` → 25 channels).
+  - `0x0004–0x000F` — currently all zeros.
+- Starting at offset `0x0010`, the page is a linear array of fixed-size channel slots.
+- Slot stride is **0x30 bytes**. Slot _n_ starts at `0x0010 + n × 0x30`.
 
 ## Slot structure (high level)
 
-Within each 0x30‑byte slot:
+Within each 0x30-byte slot (relative offsets are from the slot start):
 
-- Label area: printable ASCII channel label, terminated by a 0x00 byte.
-- Optional padding: 0–16 bytes of 0xFF or 0x00 after the label terminator.
-- Signature + data area: a recognizable byte pattern marks the start of frequency/params. We refer to this start as s.
+| Offset | Length | Description |
+|--------|--------|-------------|
+| 0x00   | 16     | Channel label (ASCII, NUL-padded). |
+| 0x10   | 4      | RX frequency, BCD little-endian, units of 10 Hz. |
+| 0x14   | 4      | TX frequency, same encoding as RX. |
+| 0x18   | 24     | Parameter block (mode, power, colour code, signalling, etc.). |
 
-Observed post‑label signature patterns:
-
-- Pattern A: 50 87 ?? 44 50 87 ?? 44
-- Pattern B: 25 ?? 44 [00]? 25 ?? 44
-
-The first 8 bytes at s encode RX/TX frequencies; the next 16 bytes (s+8..s+23) act as a parameter block. In some images a 4‑byte pad causes an alternate alignment; the tool evaluates both s and s+4 and selects the better‑scoring candidate.
+There is no variable padding: the label always consumes the first 16 bytes and the BCD fields always begin at offset 0x10.
 
 ## Frequency encoding
 
+- RX frequency: 4-byte little-endian BCD at 0x10..0x13.
+- TX frequency: 4-byte little-endian BCD at 0x14..0x17.
+- Each nibble is a decimal digit; interpret the bytes as a little-endian integer whose least-significant digit is in bits 3..0 of byte 0. The resulting integer is measured in 10 Hz units (divide by 100 000 to obtain MHz).
+- TX and RX use the same encoding. Factory data shows them equal for simplex channels; repeaters use different TX values, matching the CSV export.
+- The values are trustworthy; no secondary float representation is required.
 
-- RX frequency: 4‑byte little‑endian BCD at s..s+3
-- TX frequency: 4‑byte little‑endian BCD at s+4..s+7
-- Each nibble represents a decimal digit; the 8 digits form a value in 10 Hz units. Example: digits “4 4 3 5 8 7 5 0” → 443.58750 MHz.
-- A float32 value sometimes exists at the same location but is not relied upon; BCD is the authoritative signal.
-- Robust decode: try both BCD nibble orders; pick the one that scores better for ham bands (≈144/430 MHz) and 12.5 kHz step alignment.
-- Sanity: for TX, fall back to RX if out‑of‑band or if |TX−RX| > ~10 MHz.
+## Parameter block
 
-## Parameter block (16 bytes at s+8..s+23)
+Indexing below is zero-based within the 24-byte parameter block (params[0] is the byte at slot offset 0x18). Observations are grounded in the factory capture and cross-checked against `factory_channels.csv`.
 
-Indexing below is zero‑based within the 16‑byte params region (params[0] == byte at s+8).
-
-Known/validated fields:
-
-- params[0] (s+8): TX power and mode lead‑in
-  - Digital‑like records start with 14 00 00 00
-  - Analog‑like records start with 04 80 00 00
-  - Bit 0x04 set → High; cleared → Low (confirmed on‑radio). Applies to both modes.
-- params[5] (s+13): Timeslot and Color Code
-  - Timeslot: bit 0x10 set → Slot 2; cleared → Slot 1.
-  - Color Code: lower nibble appears to equal the programmed CC (e.g., 0x01 → CC1; 0x03 → CC3). Verified via a channel updated to CC=3.
-- params[7] (s+15): Monitor/flag bit
-  - Observed 0x80 on normal channels; 0x81 on “Monitor TSx” channels. Hypothesis: bit 0 indicates a “monitor”/special receive behavior; exact meaning TBD.
-
-Common constants/unexplained bytes (stable across many channels; mapping in progress):
-
-- params[1]..[4] often: 00 0B 20 20 or 00 1B 20 20
-- In digital records, params[4] is frequently 0x30 or 0x34 and params[5] often equals 0x01.
-- params[6] typically 00
-- params[8] typically 00
-- params[9]..[12] typically FF FF FF FF (filler)
-- params[13] varies between C0 and E0 across groups (band/region/contact table linkage?); params[14] often 01; params[15] 00 or FF.
-
-## Examples from real slots (dmrva example)
-
-- “RIC RVA Metro” (slot 0)
-  - params: 10 00 0B 20 20 01 00 80 00 FF FF FF FF C0 01 00
-  - Decoded: RX/TX 443.58750/448.58750, TS1 (bit 0x10 not set), CC=1, Power Low (0x04 cleared).
-- “RIC Monitor TS2”
-  - params: 14 00 0B 20 20 11 00 81 00 FF FF FF FF C0 01 00
-  - Decoded: TS2 (0x10 set), CC=1, Power High (0x04 set), Monitor flag present (0x81).
-- “RIC TAC B” with CC=3 (user‑modified)
-  - params: 1C 00 1B 20 20 03 00 80 00 FF FF FF FF E0 01 00
-  - Decoded: TS1, CC=3 (low nibble 0x3), High power (0x04 set in 0x1C).
-
-## Label and signature alignment details
-
-- After the NUL terminator, slots may include up to 16 bytes of pad consisting of 0xFF and/or 0x00.
-- Some slots contain extra ASCII metadata between label and signature. A forward scan up to +32 bytes reliably finds the signature start s; the tool also evaluates an alternative alignment at s+4.
-- Frequencies and params are always interpreted relative to s.
+| Index | Meaning | Notes from factory image |
+|-------|---------|---------------------------|
+| 0     | Mode/Power flags | Bit 0x04 = High power, cleared = Low (confirmed on-radio). Bit 0x10 set for digital channels, cleared for analog. Other bits TBD. Digital high-power slots show `0x14`; analog high-power slots show `0x04`. |
+| 1     | Modulation type | `0x80` for analog channels, `0x00` for digital. |
+| 2     | TOT (seconds/15 s units?) | Usually `0x00`. Channels with APRS beaconing set this to `0x04` (≈ 60 s). Needs more samples to nail unit size. |
+| 3     | Emergency/TX admit flags | Normally `0x00`. Becomes `0xC1` when an Emergency System is assigned (factory “Digital Alarm”). |
+| 4     | Feature mask | Baseline `0x30`. Bit 0x04 (→ `0x34`) toggles when `APRS Report Type` is “Digital”. |
+| 5     | Colour Code / CTCSS nibble | Lower nibble equals programmed DMR colour code (0..15). Value `0x00` observed on CC0 channels. Analog entries keep their default (often `0x01`). |
+| 6     | Encryption ID | `0x00` when disabled. Matches the “Encryption ID” ordinal (e.g., `0x01` for “Encrypt 1”). |
+| 7     | Digital feature bits | Bit 0 (0x01) set on digital channels; cleared on analog. Bit 6 (0x40) asserts when “Privacy”/encryption is enabled. |
+| 8     | APRS receive flag | Currently `0x00`; expected to mirror the “APRS Receive” checkbox when enabled (needs confirmation). |
+| 9–12  | Filler | Always 0xFF. |
+| 13    | Signalling block selector | `0x00` for none. Analog signalling channels keep this at 0x00 and instead use index 14/17 below. |
+| 14    | Analog signalling type | Matches CPS “Signaling Type”: `0x02` (DTMF), `0x16` (5-Tone), `0x08` (BDC1200). `0x00` when signalling is disabled. |
+| 15–16 | Signalling params | Currently zero in factory data. |
+| 17    | Additional signalling param | BDC1200 stores `0x08` here; other modes leave it zero. |
+| 18–23 | Reserved | All zeros in the factory dump. |
 
 ## Outliers and cautions
 
@@ -95,6 +74,6 @@ Common constants/unexplained bytes (stable across many channels; mapping in prog
 
 ## Pointers to artifacts
 
-- Raw slot dumps with aligned signature/frequencies: `dm32_slots_debug.csv`
-- Parsed channel fields (label, RX/TX, timeslot, params): `dm32_channels_fields.csv`
-- Example exports for validation: `dm32_reference/exports/` (CSV files)
+- Raw slot dumps with aligned fields: `dumps/channel_00A00A.bin` (captured via `dm32_cps_emulator.py`).
+- Parsed channel fields (label, RX/TX, params): work in progress; derive from the CSVs in `dm32_reference/exports/`.
+- Example exports for validation: `dm32_reference/exports/` (CSV files).
