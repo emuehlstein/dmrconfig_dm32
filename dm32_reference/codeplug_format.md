@@ -1,27 +1,67 @@
-# Roam Zone Entry Offset
+# DM-32 Codeplug File Format Summary
 
-The first roam zone entry appears at offset `0x00009010` in all codeplug files:
+This document captures the current understanding of the DM-32 codeplug layout.
+Offsets and record dimensions were verified against the binary codeplugs in
+`dm32_reference/code_plugs/*.data` and the OEM CPS exports in
+`dm32_reference/exports/*`.  Run `tools/compare_codeplug_offsets.py` to
+regenerate the tables or explore new datasets.
 
-| Offset    | dmrva.data    | factory.data   | GBFMcCall.data   | DM32_EricPlug.data |
-|-----------|---------------|---------------|------------------|--------------------|
-| 0x00009010| Roam Zone 1   | Roam Zone 1   | Roam Zone 1      | Roam Zone 1        |
+## Codeplug Files
 
-This offset likely marks the start of the roam zone section, with subsequent entries following at regular intervals.
+- `dmrva.data`
+- `factory.data`
+- `GBFMcCall.data`
+- `DM32_EricPlug.data`
 
-# Scan List Entry Offsets
+## Structure and Usage
 
-The first scan list entry appears at offset `0x00008001` in the codeplug files:
+- Codeplug files are written in fixed-size blocks that mirror the serial write protocol (`0x52` write commands acknowledged by `0x57`).
+- The block header's second byte appears to encode the destination block address within radio memory.
 
-| Offset    | dmrva.data    | factory.data   | GBFMcCall.data   | DM32_EricPlug.data |
-|-----------|---------------|---------------|------------------|--------------------|
-| 0x00008001| RIC Mon All   | Scan List 1   | Mounds           | Family             |
-| 0x00008008|               |               | st 1             | st 1               |
+## Data Mapping
 
-This offset likely marks the start of the scan list section, with subsequent entries following at regular intervals.
+- Each binary block maps sequentially to the radio's memory space.
+- Comparing multiple codeplugs reveals constant offsets and record strides for user-facing structures (channels, zones, canned messages, etc.).
 
-# Canned Message Offsets
+## Memory Offset Findings
 
-The following offsets store canned (pre-programmed) text messages in the codeplug files:
+### Firmware Version Offset
+
+The firmware version string appears at offset `0x00000030` in the codeplug files:
+
+- `GBFMcCall.data`: `DM32.01.02.046`
+- `DM32_EricPlug.data`: `DM32.01.01.046`
+
+This offset likely stores the firmware version or model identifier for the codeplug or device.
+
+### Boot Message Offsets
+
+The boot message appears as two lines at fixed offsets in the codeplug files:
+
+- **Line 1** (offset `0x00005001`):
+  - `dmrva.data`: `DMRVA2.6`
+  - `factory.data`: `Welcome`
+  - `GBFMcCall.data`: `Welcome`
+  - `DM32_EricPlug.data`: `KC9MHE`
+- **Line 2** (offset `0x0000500f`):
+  - `dmrva.data`: `2025-07-03`
+  - `factory.data`: `DM-32UV`
+  - `GBFMcCall.data`: `DM-32UV`
+  - `DM32_EricPlug.data`: `312.203.0222`
+
+These offsets store the two-line boot message displayed on the radio at startup.
+
+### Radio ID / DMR ID Offsets
+
+Subscriber ID strings (the "Radio Name" field in the CPS export) begin at
+offset `0x00006013`.  Each entry is stored 16 bytes apart (`0x10`), yielding the
+series `0x00006013`, `0x00006023`, `0x00006033`, etc.  The factory codeplug and
+DMRVA export both align with this block (e.g. `Radio 1`, `Radio 2`, `CHANGEME`).
+
+### Canned Message Offsets
+
+The following offsets store canned (pre-programmed) text messages in the
+codeplug files.  Each record is `0x81` bytes apart.
 
 | Offset    | dmrva.data | factory.data         | GBFMcCall.data       | DM32_EricPlug.data      |
 |-----------|------------|----------------------|----------------------|-------------------------|
@@ -33,82 +73,78 @@ The following offsets store canned (pre-programmed) text messages in the codeplu
 
 These are likely the default quick text messages available for transmission from the radio.
 
-# Boot Message Offsets
+### Scan List Entry Offsets
 
-The boot message appears as two lines at fixed offsets in the codeplug files:
+The first scan list entry appears at offset `0x00008001` across the codeplugs.
+Scan list records are `0x39` bytes long, so each additional list is located at
+`offset + 0x39 * n`.
 
-- **Line 1** (offset `0x00005001`):
-	- `dmrva.data`: `DMRVA2.6`
-	- `factory.data`: `Welcome`
-	- `GBFMcCall.data`: `Welcome`
-	- `DM32_EricPlug.data`: `KC9MHE`
-- **Line 2** (offset `0x0000500f`):
-	- `dmrva.data`: `2025-07-03`
-	- `factory.data`: `DM-32UV`
-	- `GBFMcCall.data`: `DM-32UV`
-	- `DM32_EricPlug.data`: `312.203.0222`
+| Offset    | dmrva.data    | factory.data   | GBFMcCall.data   | DM32_EricPlug.data |
+|-----------|---------------|---------------|------------------|--------------------|
+| 0x00008001| RIC Mon All   | Scan List 1   | Mounds           | Family             |
+| 0x0000803a| BEA Mon All   | Scan List 2   |                  | Scan List 2        |
 
-These offsets store the two-line boot message displayed on the radio at startup.
+This offset marks the start of the scan list section, with subsequent entries following at regular intervals.
 
-# Firmware Version Offset
+### Roam Zone Entry Offsets
 
-The firmware version string appears at offset `0x00000030` in the codeplug files:
+The first roam zone entry appears at offset `0x00009010` in every inspected
+codeplug file.  Subsequent roam zones follow the same fixed record spacing, so
+the second entry can be found `0x91` bytes later at `0x000090a1`, the third at
+`0x00009132`, and so on.
 
-- `GBFMcCall.data`: `DM32.01.02.046`
-- `DM32_EricPlug.data`: `DM32.01.01.046`
+| Offset    | dmrva.data    | factory.data   | GBFMcCall.data   | DM32_EricPlug.data |
+|-----------|---------------|---------------|------------------|--------------------|
+| 0x00009010| Roam Zone 1   | Roam Zone 1   | Roam Zone 1      | Roam Zone 1        |
 
-This offset likely stores the firmware version or model identifier for the codeplug or device.
+This offset marks the start of the roam zone section, with subsequent entries
+following at regular intervals.
 
-## 4.1 Zone Data Offsets
+### Zone Data Offsets
 
-The first zone string appears at offset `0x00011010` in all three codeplug files:
+The first zone string appears at offset `0x00011010` in every codeplug analysed.
 
 - `dmrva.data`: `Richmond`
 - `factory.data`: `Zone 1`
 - `GBFMcCall.data`: `Mounds`
 
-This offset likely marks the start of the zone list in the codeplug structure. The string at this location represents the name of the first zone (e.g., Family).
+Zone records are `0x91` bytes long.  For example, the second zone resides at
+`0x000110a1`, the third at `0x00011132`, etc.  This fixed spacing matches the
+per-codeplug comparisons generated by `tools/compare_codeplug_offsets.py`.
 
-Further zone names follow at regular intervals, suggesting a fixed-size record for each zone, similar to channels.
-# DM-32 Codeplug File Format Summary
+Note: The Eric plug reuses the name "Family" for both the first scan list and
+the first zone.  In the binary the same string appears at both `0x00008001` and
+`0x00011010`, which suggests the firmware copies strings into multiple sections
+instead of sharing a pointer table.
 
-This document summarizes findings about the DM-32 codeplug files based on analysis and serial write process logs.
+Further zone names follow at regular intervals, confirming a fixed-size record
+layout similar to the channel section.
 
-## 1. Codeplug Files
-- Example files: `dmrva.data`, `factory.data`, `GBFMcCall.data`, `DM32_EricPlug.data`
-- These are binary files containing the configuration (codeplug) for the radio.
+### Channel Data Offsets
 
-## 2. Structure and Usage
-- The files are written to the radio in blocks, matching the block size and address pattern seen in the serial capture logs.
-- Each block of the file is sent using a `0x52` (R) command, with the radio acknowledging via a `0x57` (W) response.
-- The second byte in the command (e.g., `ff`, `1f`, `2f`, ...) likely represents the memory address or block number.
-
-## 3. Data Mapping
-- The codeplug file is divided into fixed-size blocks.
-- Each block is transferred sequentially to the radio, starting from the beginning of the file.
-- The mapping between file offset and block address can be established by analyzing the block write sequence in the serial log.
-
-
-## 4. Channel Data Offsets
-
-The first channel string appears at offset `0x00021010` in all three codeplug files:
+The first channel string appears at offset `0x00021010` in every codeplug file.
 
 - `dmrva.data`: `RIC RVA Metro`
 - `factory.data`: `Channel 1`
 - `GBFMcCall.data`: `RAB OKWtr`
+- `DM32_EricPlug.data`: `F1 All`
 
-This offset likely marks the start of the channel list in the codeplug structure. The string at this location represents the name of the first channel (e.g., F1 All).
+Channel records are exactly `0x30` bytes apart.  The factory codeplug confirms
+this with the sequential block from `Channel 1` through `TDMA Direct Mode`, and
+the DMRVA plug maps dozens of channels with the same stride.
 
-Further channel names follow at regular intervals, suggesting a fixed-size record for each channel.
+Because of this fixed spacing we can predict the offset for channel `n`
+(1-indexed) using:
 
-## 5. Summary Table
-| File Name           | Description                   |
-|---------------------|------------------------------|
-| dmrva.data          | DMRVA codeplug               |
-| factory.data        | Factory default codeplug      |
-| GBFMcCall.data      | GBFMcCall codeplug           |
-| DM32_EricPlug.data  | EricPlug codeplug            |
+$$
+	ext{offset}(n) = 0x00021010 + 0x30 \times (n - 1)
+$$
 
-## 6. Next Steps
-- Further analysis can be performed to document the internal structure of each block and the meaning of specific bytes/fields.
-- Comparing different codeplug files may help identify field boundaries and settings.
+Strings longer than 16 characters may be truncated or padded with spaces in the
+binary (for example `F11 Nrthbrk`).  When reconciling CPS exports, compare the
+first 16 characters or trim trailing spaces to locate the correct record.
+
+The helper script `tools/compare_codeplug_offsets.py` enumerates everything the
+OEM CPS export exposes for the factory, DMRVA, and Eric plugs.  It also flags
+offsets without a precise match—usually places where the exported name differs
+slightly from the stored string.
