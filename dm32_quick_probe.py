@@ -1,41 +1,16 @@
 #!/usr/bin/env python3
-"""
-dm32_quick_probe.py — Minimal DM-32UV CPS "read" handshake + info probe
+"""DM-32UV quick probe aligned with documented CPS read sequence.
 
-Usage examples (macOS, zsh):
-  # List serial ports
-  ./dm32_quick_probe.py --list
+This script reproduces the OEM CPS "read" flow:
 
-  # Basic probe using default 115200 baud
-  ./dm32_quick_probe.py --port /dev/cu.usbserial-XXXX
+1. ASCII handshake (PSEARCH, PASSSTA, SYSINFO)
+2. PROGRAM mode entry
+3. V-frame enumeration (IDs 0x01..0x10, skipping 0x0C)
+4. 4 KiB page reads in the observed order from read_connection.md
 
-  # Faster per-frame probing after handshake with logging
-  ./dm32_quick_probe.py --port /dev/cu.usbserial-XXXX --fast --log probe.log
-
-  # Burst mode (default), tweak timing knobs
-  ./dm32_quick_probe.py --port /dev/cu.usbserial-XXXX \
-      --cadence-ms 10 --v-timeout 0.6 --window 5
-
-  # Line helpers if your adapter needs nudging
-  ./dm32_quick_probe.py --port /dev/cu.usbserial-XXXX --toggle-lines --send-break
-
-What it does
-  - Opens a serial port (default 115200 baud) and performs the CPS ASCII handshake:
-      PSEARCH, PASSSTA, SYSINFO (each CR-terminated) per read_connection.md.
-  - Parses any immediate ASCII bursts to extract a Board ID if present (e.g., "DP570UV").
-  - Sends "V" info probes (per serial captures):
-      56 00 00 40 0D
-      56 00 00 00 01 .. 10 (skips 0C), CR-terminated
-  - Parses V replies for:
-      Type 0x01: firmware version (ASCII)
-      Type 0x03: build date (ASCII)
-      Type 0x0F: first three bytes as 24-bit big-endian pointer (e.g., 0x008027)
-  - Prints a summary.
-
-Notes
-  - Self-contained script, only depends on pyserial.
-  - This is NOT a full reader—only handshake + info probes.
-  - Be tolerant of noise: ignores stray bytes like 0x06/0xFF.
+It assumes a 115200 baud CH340-based adapter. The port defaults to
+``/dev/cu.usbserial-10`` with a fallback to ``/dev/cu.usbserial-110``
+but ``--port`` remains for compatibility across adapters and OSes.
 """
 
 from __future__ import annotations
@@ -44,428 +19,347 @@ import argparse
 import binascii
 import sys
 import time
-from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple, List
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional, Sequence, Tuple
 
-try:
-    import serial  # type: ignore
-    import serial.tools.list_ports as list_ports  # type: ignore
-except Exception as e:  # pragma: no cover - import-time message
-    sys.stderr.write(
-        "pyserial is required. Install with: pip install -r requirements.txt (pyserial>=3.5)\n"
-    )
-    raise
+import serial  # type: ignore
+
+# Handshake tokens and V-frame probes
+HANDSHAKE_TOKENS: Sequence[bytes] = (b"PSEARCH", b"PASSSTA", b"SYSINFO")
+V_QUERY_SPECIAL = bytes([0x56, 0x00, 0x00, 0x40, 0x0D])
+V_QUERY_RANGE: Sequence[int] = tuple(i for i in range(0x01, 0x11) if i != 0x0C)
+
+# Observed order of 4 KiB reads (address, label)
+FOUR_KIB_READS: Sequence[Tuple[int, str]] = (
+    (0x00A00A, "channels_page_0"),
+    (0x005001, "channels_page_1"),
+    (0x007001, "channels_page_2"),
+    (0x01F0FF, "padding_guard_0"),
+    (0x01F0FF, "padding_guard_1"),
+    (0x01F0FF, "padding_guard_2"),
+    (0x003007, "unknown_003007"),
+    (0x01F0FF, "padding_guard_3"),
+    (0x002007, "unknown_002007"),
+    (0x01F0FF, "padding_guard_4"),
+    (0x00A002, "unknown_00A002"),
+    (0x00D00A, "strings_00D00A"),
+    (0x01F0FF, "padding_guard_5"),
+    (0x000002, "unknown_000002"),
+    (0x002000, "unknown_002000"),
+    (0x01F0FF, "padding_guard_6"),
+    (0x001004, "unknown_001004"),
+    (0x00200A, "unknown_00200A"),
+    (0x01F0FF, "padding_guard_7"),
+    (0x01F0FF, "padding_guard_8"),
+    (0x01F0FF, "padding_guard_9"),
+    (0x01F0FF, "padding_guard_10"),
+    (0x01F0FF, "padding_guard_11"),
+    (0x01F0FF, "padding_guard_12"),
+    (0x01F0FF, "padding_guard_13"),
+    (0x01F0FF, "padding_guard_14"),
+    (0x01F0FF, "padding_guard_15"),
+    (0x01F0FF, "padding_guard_16"),
+    (0x01F0FF, "padding_guard_17"),
+    (0x00D000, "strings_00D000"),
+    (0x00B000, "scanlists_00B000"),
+    (0x005003, "zones_005003"),
+    (0x00A006, "unknown_00A006"),
+    (0x001001, "encryption_001001"),
+    (0x006003, "welcome_006003"),
+    (0x00F000, "unknown_00F000"),
+    (0x00C000, "emergency_00C000"),
+    (0x00B006, "scanlists_00B006"),
+    (0x008001, "roam_008001"),
+    (0x00D001, "roam_00D001"),
+    (0x009000, "dmr_id_009000"),
+    (0x008027, "contacts_008027"),
+)
+
+DEFAULT_CAPTURE_DIR = Path("dm32_reference/serial_captures/latest_run")
 
 
-# ----------------------------- Utilities -----------------------------
+# ----------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------
 
 
-def now_ts() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+def hexdump(data: bytes) -> str:
+    return binascii.hexlify(data).decode("ascii")
 
 
-def is_printable_ascii(b: int) -> bool:
-    return 0x20 <= b <= 0x7E
+@dataclass
+class VFrame:
+    type_id: int
+    payload: bytes
+    raw: bytes
 
 
-def hexdump(data: bytes, group: int = 1) -> str:
-    if not data:
-        return ""
-    if group <= 1:
-        return " ".join(f"{b:02X}" for b in data)
-    out: List[str] = []
-    for i in range(0, len(data), group):
-        chunk = data[i : i + group]
-        out.append(binascii.hexlify(chunk).decode().upper())
-    return " ".join(out)
+def read_v_frame(ser: serial.Serial, timeout: float = 1.0) -> Optional[VFrame]:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        lead = ser.read(1)
+        if not lead:
+            continue
+        if lead[0] != 0x56:
+            continue
+        header = ser.read(2)
+        if len(header) < 2:
+            return None
+        type_id, length = header
+        payload = ser.read(length)
+        while len(payload) < length and time.time() < deadline:
+            more = ser.read(length - len(payload))
+            if more:
+                payload += more
+            else:
+                time.sleep(0.01)
+        if len(payload) != length:
+            return None
+        raw = bytes([0x56, type_id, length]) + payload
+        return VFrame(type_id=type_id, payload=payload, raw=raw)
+    return None
 
 
-class Logger:
-    def __init__(self, path: Optional[str]):
-        self.path = path
+def send(ser: serial.Serial, data: bytes, pause: float = 0.05) -> None:
+    ser.write(data)
+    ser.flush()
+    time.sleep(pause)
 
-    def log_line(self, kind: str, data: bytes):
-        if not self.path:
+
+def collect_window(ser: serial.Serial, window: float = 0.2) -> bytes:
+    end = time.time() + window
+    buf = bytearray()
+    while time.time() < end:
+        waiting = ser.in_waiting
+        if waiting:
+            buf.extend(ser.read(waiting))
+        else:
+            time.sleep(0.01)
+    return bytes(buf)
+
+
+def enter_program_mode(ser: serial.Serial) -> None:
+    send(ser, bytes([0x47, 0x00, 0x00, 0x00, 0x00, 0x01]), pause=0.1)
+    collect_window(ser, window=0.15)
+    for frame in (
+        bytes.fromhex("FF FF FF FF 0C") + b"PROGRAM",
+        bytes([0x02]),
+        bytes([0x06]),
+    ):
+        send(ser, frame, pause=0.05)
+    ser.reset_input_buffer()
+    time.sleep(0.05)
+
+
+def perform_handshake(ser: serial.Serial) -> tuple[Optional[str], bytes]:
+    aggregate = bytearray()
+    for token in HANDSHAKE_TOKENS:
+        print(f"-> {token.decode('ascii')}")
+        send(ser, token, pause=0.06)
+        reply = collect_window(ser, window=0.35)
+        if reply:
+            print(f"<- {hexdump(reply)}")
+            aggregate.extend(reply)
+        else:
+            print("<- (no response)")
+    residual = collect_window(ser, window=0.3)
+    aggregate.extend(residual)
+    handshake_bytes = bytes(aggregate)
+    if handshake_bytes:
+        print(f"Handshake raw: {hexdump(handshake_bytes)}")
+    return extract_board_id(handshake_bytes), handshake_bytes
+
+
+def extract_board_id(data: bytes) -> Optional[str]:
+    ascii_bytes = bytes(b for b in data if 0x20 <= b <= 0x7E)
+    if not ascii_bytes:
+        return None
+    text = ascii_bytes.decode("ascii", errors="ignore")
+    segments: list[str] = []
+    for raw in text.split():
+        cleaned = "".join(ch for ch in raw if ch.isalnum())
+        if len(cleaned) >= 4:
+            segments.append(cleaned)
+    if not segments:
+        return None
+    for prefix in ("DP", "DM", "UV"):
+        for seg in segments:
+            if prefix in seg:
+                if "UV" in seg:
+                    base, _, _ = seg.partition("UV")
+                    return f"{base}UV"
+                return seg
+    return segments[0]
+
+
+def probe_v_frames(ser: serial.Serial) -> tuple[dict[str, str], list[VFrame]]:
+    results: dict[str, str] = {}
+    frames: list[VFrame] = []
+    send(ser, V_QUERY_SPECIAL, pause=0.05)
+    vf = read_v_frame(ser, timeout=1.0)
+    if vf:
+        frames.append(vf)
+        handle_v_frame(vf, results)
+    for i in V_QUERY_RANGE:
+        send(ser, bytes([0x56, 0x00, 0x00, 0x00, i]), pause=0.05)
+        vf = read_v_frame(ser, timeout=0.8)
+        if vf:
+            frames.append(vf)
+            handle_v_frame(vf, results)
+    return results, frames
+
+
+def handle_v_frame(vf: VFrame, results: dict[str, str]) -> None:
+    payload_hex = hexdump(vf.payload)
+    if vf.type_id == 0x01:
+        value = vf.payload.decode("ascii", errors="ignore").strip("\x00")
+        if value:
+            results["firmware"] = value
+            print(f"V[01] firmware: {value}")
             return
-        try:
-            with open(self.path, "a", encoding="utf-8") as f:
-                f.write(f"{now_ts()} {kind:<5} {hexdump(data)}\n")
-        except Exception:
-            # Don't let logging failures break the probe
-            pass
-
-
-def drip_write(ser: serial.Serial, payload: bytes, char_delay_ms: int, logger: Logger):
-    if char_delay_ms <= 0:
-        ser.write(payload)
-        logger.log_line("WRITE", payload)
+    if vf.type_id == 0x03:
+        value = vf.payload.decode("ascii", errors="ignore").strip("\x00")
+        if value:
+            results["build_date"] = value
+            print(f"V[03] build date: {value}")
+            return
+    if vf.type_id == 0x0F and len(vf.payload) >= 3:
+        ptr = (vf.payload[0] << 16) | (vf.payload[1] << 8) | vf.payload[2]
+        results["contacts_ptr"] = f"0x{ptr:06X}"
+        print(f"V[0F] contacts ptr: 0x{ptr:06X}")
         return
-    d = max(0.0, char_delay_ms) / 1000.0
-    for b in payload:
-        ser.write(bytes([b]))
-        logger.log_line("WRITE", bytes([b]))
-        time.sleep(d)
+    print(f"V[{vf.type_id:02X}] len={len(vf.payload)} payload={payload_hex}")
+    results[f"v_{vf.type_id:02X}"] = payload_hex
 
 
-def read_for(ser: serial.Serial, duration_s: float, logger: Logger) -> bytes:
-    """Read for a fixed duration, respecting ser.timeout. Returns bytes collected."""
-    end = time.monotonic() + max(0.0, duration_s)
-    buf = bytearray()
-    while time.monotonic() < end:
-        try:
-            n = ser.in_waiting if hasattr(ser, "in_waiting") else 0
-            # Always read at least one byte per loop respecting timeout
-            chunk = ser.read(n or 1)
-            if chunk:
-                buf += chunk
-                logger.log_line("READ", chunk)
-        except serial.SerialException:
-            break
-    return bytes(buf)
-
-
-def read_until_quiet(
-    ser: serial.Serial, quiet_ms: int, max_total_s: float, logger: Logger
-) -> bytes:
-    """Read until no bytes arrive for quiet_ms, or until max_total_s elapsed."""
-    quiet_s = max(0, quiet_ms) / 1000.0
-    deadline = time.monotonic() + max_total_s
-    buf = bytearray()
-    last = time.monotonic()
-    while time.monotonic() < deadline:
-        chunk = ser.read(ser.in_waiting or 1)
-        if chunk:
-            buf += chunk
-            logger.log_line("READ", chunk)
-            last = time.monotonic()
-        else:
-            if time.monotonic() - last >= quiet_s:
-                break
-    return bytes(buf)
-
-
-def find_ascii_tokens(data: bytes, min_len: int = 6) -> List[str]:
-    tokens: List[str] = []
-    run = bytearray()
-    for b in data:
-        if is_printable_ascii(b):
-            run.append(b)
-        else:
-            if len(run) >= min_len:
-                tokens.append(run.decode(errors="ignore"))
-            run.clear()
-    if len(run) >= min_len:
-        tokens.append(run.decode(errors="ignore"))
-    return tokens
-
-
-# ----------------------------- Protocol -----------------------------
-
-ASCII_CR = b"\r"
-
-
-def send_ascii(ser: serial.Serial, text: str, char_delay_ms: int, logger: Logger):
-    payload = text.encode("ascii") + ASCII_CR
-    drip_write(ser, payload, char_delay_ms, logger)
-
-
-def send_v_frame(
-    ser: serial.Serial,
-    body: bytes,
-    char_delay_ms: int,
-    logger: Logger,
-    add_cr: bool = True,
-):
-    payload = b"\x56" + body + (ASCII_CR if add_cr else b"")
-    drip_write(ser, payload, char_delay_ms, logger)
-
-
-def do_handshake(
-    ser: serial.Serial, char_delay_ms: int, logger: Logger, settle_s: float = 0.05
-) -> bytes:
-    # Per read_connection.md, ASCII handshake sequence
-    send_ascii(ser, "PSEARCH", char_delay_ms, logger)
-    time.sleep(settle_s)
-    r1 = read_for(ser, 0.2, logger)
-
-    send_ascii(ser, "PASSSTA", char_delay_ms, logger)
-    time.sleep(settle_s)
-    r2 = read_for(ser, 0.2, logger)
-
-    send_ascii(ser, "SYSINFO", char_delay_ms, logger)
-    time.sleep(settle_s)
-    r3 = read_for(ser, 0.5, logger)
-
-    return r1 + r2 + r3
-
-
-def parse_v_replies(stream: bytes) -> Dict[int, bytes]:
-    """
-    Heuristic parser: extract reply records that look like
-      56 00 00 00 <type> <payload...> 0D
-    or more generally starting with 0x56 and ending at CR.
-    Returns mapping type -> payload (raw bytes between type and CR).
-    If multiple entries of the same type, last one wins.
-    """
-    out: Dict[int, bytes] = {}
-    i = 0
-    while i < len(stream):
-        if stream[i] == 0x56:  # 'V'
-            # find CR
-            j = stream.find(b"\r", i + 1)
-            if j == -1:
-                # try LF as terminator fallback
-                j = stream.find(b"\n", i + 1)
-            end = j if j != -1 else len(stream)
-            frame = stream[i:end]
-            # Expect minimum length: V 00 00 00 TT ...
-            if len(frame) >= 5:
-                # try to identify type
-                typ = frame[4]
-                payload = frame[5:]
-                out[typ] = bytes(payload)
-                i = end + (1 if j != -1 else 0)
-                continue
-        i += 1
-    return out
-
-
-def decode_summary(
-    vmap: Dict[int, bytes], ascii_fallback: bytes
-) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[int]]:
-    fw = None
-    bdate = None
-    contacts_ptr = None
-
-    if 0x01 in vmap:
-        try:
-            fw = vmap[0x01].decode("ascii", errors="ignore").strip("\x00\r\n ") or None
-        except Exception:
-            fw = None
-    if 0x03 in vmap:
-        try:
-            bdate = (
-                vmap[0x03].decode("ascii", errors="ignore").strip("\x00\r\n ") or None
-            )
-        except Exception:
-            bdate = None
-    if 0x0F in vmap:
-        p = vmap[0x0F]
-        if len(p) >= 3:
-            contacts_ptr = (p[0] << 16) | (p[1] << 8) | p[2]
-
-    # Board ID from any printable ASCII bursts
-    board_id: Optional[str] = None
-    for tok in find_ascii_tokens(ascii_fallback):
-        # Heuristic: uppercase letters/digits with length >= 5 often contain model IDs
-        if any(c.isalpha() for c in tok) and any(ch.isdigit() for ch in tok):
-            board_id = tok
-            break
-
-    return board_id, fw, bdate, contacts_ptr
-
-
-# ----------------------------- CLI / Main -----------------------------
-
-
-def list_serial_ports() -> List[Tuple[str, str]]:
-    out: List[Tuple[str, str]] = []
-    for p in list_ports.comports():
-        out.append((p.device, f"{p.description or ''}".strip()))
-    return out
-
-
-def main(argv: Optional[List[str]] = None) -> int:
-    ap = argparse.ArgumentParser(description="DM-32UV quick probe (handshake + V-info)")
-    ap.add_argument("--list", action="store_true", help="List serial ports and exit")
-    ap.add_argument("--port", help="Serial port path, e.g. /dev/cu.usbserial-XXXX")
-    ap.add_argument(
-        "--baud", type=int, default=115200, help="Baud rate (default 115200)"
+def read_block(ser: serial.Serial, address: int, length: int = 0x1000) -> bytes:
+    assert 0 < length <= 0xFFFF
+    frame = bytes(
+        [
+            0x52,
+            (address >> 16) & 0xFF,
+            (address >> 8) & 0xFF,
+            address & 0xFF,
+            length & 0xFF,
+            (length >> 8) & 0xFF,
+        ]
     )
-    ap.add_argument(
+    send(ser, frame, pause=0.02)
+    ser.read(5)  # echoed header (address + length)
+    payload = ser.read(length)
+    while len(payload) < length:
+        more = ser.read(length - len(payload))
+        if not more:
+            break
+        payload += more
+    print(f"R 0x{address:06X} len={length} -> {len(payload)} bytes")
+    return payload
+
+
+def save_handshake(data: bytes, output_dir: Path) -> None:
+    if not data:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "handshake.bin"
+    path.write_bytes(data)
+    print(f"Saved handshake bytes to {path}")
+
+
+def save_v_frames(frames: Sequence[VFrame], output_dir: Path) -> None:
+    if not frames:
+        return
+    v_dir = output_dir / "vframes"
+    v_dir.mkdir(parents=True, exist_ok=True)
+    for idx, frame in enumerate(frames, start=1):
+        path = v_dir / f"{idx:02d}_V_{frame.type_id:02X}.bin"
+        path.write_bytes(frame.raw)
+    print(f"Saved {len(frames)} V-frame captures in {v_dir}")
+
+
+def capture_reads(ser: serial.Serial, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for index, (address, label) in enumerate(FOUR_KIB_READS, start=1):
+        data = read_block(ser, address)
+        path = output_dir / f"{index:02d}_{label}_0x{address:06X}.bin"
+        path.write_bytes(data)
+        print(f"Saved {len(data)} bytes to {path}")
+
+
+def autodetect_port() -> Optional[str]:
+    preferred = Path("/dev/cu.usbserial-10")
+    fallback = Path("/dev/cu.usbserial-110")
+    if preferred.exists():
+        return str(preferred)
+    if fallback.exists():
+        return str(fallback)
+    from serial.tools import list_ports  # type: ignore
+
+    for port in list_ports.comports():
+        device = port.device or ""
+        if "usb" in device.lower():
+            return device
+    return None
+
+
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="DM-32UV CPS-style probe")
+    parser.add_argument(
+        "--port",
+        default=None,
+        help="Serial port path (default: auto-detect)",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
-        default=0.2,
-        help="Serial read timeout in seconds (default 0.2)",
+        default=0.5,
+        help="Serial read timeout in seconds (default: 0.5)",
     )
-    ap.add_argument(
-        "--fast",
-        action="store_true",
-        help="After handshake, send V probes individually and wait per frame",
+    parser.add_argument(
+        "--output",
+        default=str(DEFAULT_CAPTURE_DIR),
+        help="Directory to store captured 4 KiB pages",
     )
-    ap.add_argument("--log", help="Append raw hex I/O to this file")
-    ap.add_argument(
-        "--cadence-ms",
-        type=int,
-        default=10,
-        help="Inter-frame delay for burst mode (default 10ms)",
-    )
-    ap.add_argument(
-        "--v-timeout",
-        type=float,
-        default=0.6,
-        help="Per V-reply wait in seconds (default 0.6)",
-    )
-    ap.add_argument(
-        "--window",
-        type=float,
-        default=5.0,
-        help="Collection window after burst send (default 5s)",
-    )
-    ap.add_argument("--toggle-lines", action="store_true", help="Pulse DTR/RTS at open")
-    ap.add_argument("--dtr", choices=["0", "1"], help="Force DTR level")
-    ap.add_argument("--rts", choices=["0", "1"], help="Force RTS level")
-    ap.add_argument(
-        "--send-break", action="store_true", help="Send a short break after open"
-    )
-    ap.add_argument(
-        "--char-delay-ms",
-        type=int,
-        default=0,
-        help="Inter-character delay when sending (default 0)",
-    )
-    ap.add_argument(
-        "--quiet-ms",
-        type=int,
-        default=80,
-        help="Quiet detection (ms) for early settling reads (default 80ms)",
-    )
-    args = ap.parse_args(argv)
+    return parser.parse_args(argv)
 
-    if args.list:
-        ports = list_serial_ports()
-        if not ports:
-            print("No serial ports found.")
-            return 0
-        for dev, desc in ports:
-            if desc:
-                print(f"{dev}\t{desc}")
-            else:
-                print(f"{dev}")
-        return 0
 
-    if not args.port:
-        print("--port is required unless using --list", file=sys.stderr)
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = parse_args(argv)
+    port = args.port or autodetect_port()
+    if not port:
+        print("Unable to locate DM-32UV serial port. Use --port to specify one.")
         return 2
 
-    logger = Logger(args.log)
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        ser = serial.Serial(
-            port=args.port,
-            baudrate=args.baud,
-            timeout=max(0.01, float(args.timeout)),  # don't allow 0.0 blocking
-            write_timeout=1.0,
+    print("=== DM-32UV Quick Probe ===")
+    print(f"Port : {port}")
+    print("Baud : 115200 (fixed)")
+
+    with serial.Serial(port=port, baudrate=115200, timeout=args.timeout) as ser:
+        ser.reset_input_buffer()
+        ser.reset_output_buffer()
+        time.sleep(0.1)
+
+        board_id, handshake_bytes = perform_handshake(ser)
+        print(f"Board ID     : {board_id or '(not found)'}")
+        save_handshake(handshake_bytes, output_dir)
+
+        enter_program_mode(ser)
+        print("PROGRAM mode sequence sent.")
+
+        v_results, v_frames = probe_v_frames(ser)
+        print(
+            f"Firmware     : {v_results.get('firmware', '(not found)')}\n"
+            f"Build date   : {v_results.get('build_date', '(not found)')}\n"
+            f"Contacts ptr : {v_results.get('contacts_ptr', '(not found)')}"
         )
-    except Exception as e:
-        print(f"Failed to open serial port {args.port}: {e}", file=sys.stderr)
-        return 1
+        save_v_frames(v_frames, output_dir)
 
-    # Best effort cleanup at exit
-    try:
-        with ser:
-            # Optional line toggles
-            try:
-                if args.dtr is not None:
-                    ser.dtr = args.dtr == "1"
-                if args.rts is not None:
-                    ser.rts = args.rts == "1"
-                if args.toggle_lines:
-                    # pulse both low->high
-                    ser.dtr = False
-                    ser.rts = False
-                    time.sleep(0.05)
-                    ser.dtr = True
-                    ser.rts = True
-                if args.send_break:
-                    # Short break to wake devices
-                    try:
-                        ser.send_break(duration=0.2)  # POSIX: approx seconds
-                    except Exception:
-                        # Fallback: toggle break_condition if available
-                        try:
-                            ser.break_condition = True
-                            time.sleep(0.2)
-                            ser.break_condition = False
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+        capture_reads(ser, output_dir)
 
-            # Clear any stale input
-            try:
-                ser.reset_input_buffer()
-                ser.reset_output_buffer()
-            except Exception:
-                pass
-
-            # Handshake
-            ascii_bursts = do_handshake(ser, args.char_delay_ms, logger)
-
-            # Initial settle read: collect anything else that trickles in
-            ascii_bursts += read_until_quiet(ser, args.quiet_ms, 0.6, logger)
-
-            # V probe sequence
-            # Always start with 56 00 00 40 0D
-            send_v_frame(ser, b"\x00\x00\x40", args.char_delay_ms, logger, add_cr=True)
-            time.sleep(args.cadence_ms / 1000.0)
-
-            # Types 0x01..0x10 skipping 0x0C (per captures)
-            v_types = [t for t in range(0x01, 0x11) if t != 0x0C]
-
-            collected = bytearray()
-            if args.fast:
-                for tval in v_types:
-                    send_v_frame(
-                        ser,
-                        b"\x00\x00\x00" + bytes([tval]),
-                        args.char_delay_ms,
-                        logger,
-                        add_cr=True,
-                    )
-                    # Wait per-frame reply window
-                    collected += read_for(ser, args.v_timeout, logger)
-                    time.sleep(args.cadence_ms / 1000.0)
-            else:
-                # Burst send then collect for a window
-                for tval in v_types:
-                    send_v_frame(
-                        ser,
-                        b"\x00\x00\x00" + bytes([tval]),
-                        args.char_delay_ms,
-                        logger,
-                        add_cr=True,
-                    )
-                    time.sleep(args.cadence_ms / 1000.0)
-                collected += read_for(ser, args.window, logger)
-
-            # Parse V replies
-            vmap = parse_v_replies(bytes(collected))
-
-            # Summary
-            board_id, fw, bdate, contacts_ptr = decode_summary(
-                vmap, ascii_bursts + bytes(collected)
-            )
-
-            print("=== DM-32UV Quick Probe ===")
-            if board_id:
-                print(f"Board ID     : {board_id}")
-            else:
-                print("Board ID     : (not found)")
-            print(f"Firmware     : {fw or '(not found)'}")
-            print(f"Build date   : {bdate or '(not found)'}")
-            if contacts_ptr is not None:
-                print(f"Contacts ptr : 0x{contacts_ptr:06X}")
-            else:
-                print("Contacts ptr : (not found)")
-
-    finally:
-        try:
-            if ser and ser.is_open:
-                ser.close()
-        except Exception:
-            pass
-
+    print("Capture complete.")
     return 0
 
 
