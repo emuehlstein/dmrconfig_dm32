@@ -276,7 +276,7 @@ FOUR_KIB_READS: Sequence[Tuple[int, str]] = (
     (0x008027, "contacts_008027"),
 )
 
-DEFAULT_CAPTURE_DIR = Path("dm32_reference/serial_captures/latest_run")
+DEFAULT_CAPTURE_DIR = Path("dm32_reference/serial_captures/quick_probe_latest_run")
 
 
 # --- Helpers -------------------------------------------------------------------
