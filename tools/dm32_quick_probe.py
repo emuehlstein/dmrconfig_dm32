@@ -22,6 +22,211 @@ import serial  # type: ignore
 
 # --- Constants -----------------------------------------------------------------
 HANDSHAKE_TOKENS: Sequence[bytes] = (b"PSEARCH", b"PASSSTA", b"SYSINFO")
+
+SMALL_READS: Sequence[tuple[int, int]] = (
+    (0x008027, 4),
+    (0xFF1F00, 1),
+    (0xFF2F00, 1),
+    (0xFF3F00, 1),
+    (0xFF4F00, 1),
+    (0xFF5F00, 1),
+    (0xFF6F00, 1),
+    (0xFF7F00, 1),
+    (0xFF8F00, 1),
+    (0xFF9F00, 1),
+    (0xFFAF00, 1),
+    (0xFFBF00, 1),
+    (0xFFCF00, 1),
+    (0xFFDF00, 1),
+    (0xFFEF00, 1),
+    (0xFFFF00, 1),
+    (0xFF0F01, 1),
+    (0xFF1F01, 1),
+    (0xFF2F01, 1),
+    (0xFF3F01, 1),
+    (0xFF4F01, 1),
+    (0xFF5F01, 1),
+    (0xFF6F01, 1),
+    (0xFF7F01, 1),
+    (0xFF8F01, 1),
+    (0xFF9F01, 1),
+    (0xFFAF01, 1),
+    (0xFFBF01, 1),
+    (0xFFCF01, 1),
+    (0xFFDF01, 1),
+    (0xFFEF01, 1),
+    (0xFFFF01, 1),
+    (0xFF0F02, 1),
+    (0xFF1F02, 1),
+    (0xFF2F02, 1),
+    (0xFF3F02, 1),
+    (0xFF4F02, 1),
+    (0xFF5F02, 1),
+    (0xFF6F02, 1),
+    (0xFF7F02, 1),
+    (0xFF8F02, 1),
+    (0xFF9F02, 1),
+    (0xFFAF02, 1),
+    (0xFFBF02, 1),
+    (0xFFCF02, 1),
+    (0xFFDF02, 1),
+    (0xFFEF02, 1),
+    (0xFFFF02, 1),
+    (0xFF0F03, 1),
+    (0xFF1F03, 1),
+    (0xFF2F03, 1),
+    (0xFF3F03, 1),
+    (0xFF4F03, 1),
+    (0xFF5F03, 1),
+    (0xFF6F03, 1),
+    (0xFF7F03, 1),
+    (0xFF8F03, 1),
+    (0xFF9F03, 1),
+    (0xFFAF03, 1),
+    (0xFFBF03, 1),
+    (0xFFCF03, 1),
+    (0xFFDF03, 1),
+    (0xFFEF03, 1),
+    (0xFFFF03, 1),
+    (0xFF0F04, 1),
+    (0xFF1F04, 1),
+    (0xFF2F04, 1),
+    (0xFF3F04, 1),
+    (0xFF4F04, 1),
+    (0xFF5F04, 1),
+    (0xFF6F04, 1),
+    (0xFF7F04, 1),
+    (0xFF8F04, 1),
+    (0xFF9F04, 1),
+    (0xFFAF04, 1),
+    (0xFFBF04, 1),
+    (0xFFCF04, 1),
+    (0xFFDF04, 1),
+    (0xFFEF04, 1),
+    (0xFFFF04, 1),
+    (0xFF0F05, 1),
+    (0xFF1F05, 1),
+    (0xFF2F05, 1),
+    (0xFF3F05, 1),
+    (0xFF4F05, 1),
+    (0xFF5F05, 1),
+    (0xFF6F05, 1),
+    (0xFF7F05, 1),
+    (0xFF8F05, 1),
+    (0xFF9F05, 1),
+    (0xFFAF05, 1),
+    (0xFFBF05, 1),
+    (0xFFCF05, 1),
+    (0xFFDF05, 1),
+    (0xFFEF05, 1),
+    (0xFFFF05, 1),
+    (0xFF0F06, 1),
+    (0xFF1F06, 1),
+    (0xFF2F06, 1),
+    (0xFF3F06, 1),
+    (0xFF4F06, 1),
+    (0xFF5F06, 1),
+    (0xFF6F06, 1),
+    (0xFF7F06, 1),
+    (0xFF8F06, 1),
+    (0xFF9F06, 1),
+    (0xFFAF06, 1),
+    (0xFFBF06, 1),
+    (0xFFCF06, 1),
+    (0xFFDF06, 1),
+    (0xFFEF06, 1),
+    (0xFFFF06, 1),
+    (0xFF0F07, 1),
+    (0xFF1F07, 1),
+    (0xFF2F07, 1),
+    (0xFF3F07, 1),
+    (0xFF4F07, 1),
+    (0xFF5F07, 1),
+    (0xFF6F07, 1),
+    (0xFF7F07, 1),
+    (0xFF8F07, 1),
+    (0xFF9F07, 1),
+    (0xFFAF07, 1),
+    (0xFFBF07, 1),
+    (0xFFCF07, 1),
+    (0xFFDF07, 1),
+    (0xFFEF07, 1),
+    (0xFFFF07, 1),
+    (0xFF0F08, 1),
+    (0xFF1F08, 1),
+    (0xFF2F08, 1),
+    (0xFF3F08, 1),
+    (0xFF4F08, 1),
+    (0xFF5F08, 1),
+    (0xFF6F08, 1),
+    (0xFF7F08, 1),
+    (0xFF8F08, 1),
+    (0xFF9F08, 1),
+    (0xFFAF08, 1),
+    (0xFFBF08, 1),
+    (0xFFCF08, 1),
+    (0xFFDF08, 1),
+    (0xFFEF08, 1),
+    (0xFFFF08, 1),
+    (0xFF0F09, 1),
+    (0xFF1F09, 1),
+    (0xFF2F09, 1),
+    (0xFF3F09, 1),
+    (0xFF4F09, 1),
+    (0xFF5F09, 1),
+    (0xFF6F09, 1),
+    (0xFF7F09, 1),
+    (0xFF8F09, 1),
+    (0xFF9F09, 1),
+    (0xFFAF09, 1),
+    (0xFFBF09, 1),
+    (0xFFCF09, 1),
+    (0xFFDF09, 1),
+    (0xFFEF09, 1),
+    (0xFFFF09, 1),
+    (0xFF0F0A, 1),
+    (0xFF1F0A, 1),
+    (0xFF2F0A, 1),
+    (0xFF3F0A, 1),
+    (0xFF4F0A, 1),
+    (0xFF5F0A, 1),
+    (0xFF6F0A, 1),
+    (0xFF7F0A, 1),
+    (0xFF8F0A, 1),
+    (0xFF9F0A, 1),
+    (0xFFAF0A, 1),
+    (0xFFBF0A, 1),
+    (0xFFCF0A, 1),
+    (0xFFDF0A, 1),
+    (0xFFEF0A, 1),
+    (0xFFFF0A, 1),
+    (0xFF0F0B, 1),
+    (0xFF1F0B, 1),
+    (0xFF2F0B, 1),
+    (0xFF3F0B, 1),
+    (0xFF4F0B, 1),
+    (0xFF5F0B, 1),
+    (0xFF6F0B, 1),
+    (0xFF7F0B, 1),
+    (0xFF8F0B, 1),
+    (0xFF9F0B, 1),
+    (0xFFAF0B, 1),
+    (0xFFBF0B, 1),
+    (0xFFCF0B, 1),
+    (0xFFDF0B, 1),
+    (0xFFEF0B, 1),
+    (0xFFFF0B, 1),
+    (0xFF0F0C, 1),
+    (0xFF1F0C, 1),
+    (0xFF2F0C, 1),
+    (0xFF3F0C, 1),
+    (0xFF4F0C, 1),
+    (0xFF5F0C, 1),
+    (0xFF6F0C, 1),
+    (0xFF7F0C, 1),
+    (0xFF8F0C, 1),
+)
+
 V_QUERY_SPECIAL = bytes([0x56, 0x00, 0x00, 0x40, 0x0D])
 V_QUERY_RANGE: Sequence[int] = tuple(i for i in range(0x01, 0x11) if i != 0x0C)
 
@@ -130,9 +335,14 @@ def collect_window(ser: serial.Serial, window: float = 0.2) -> bytes:
     return bytes(buf)
 
 
-def enter_program_mode(ser: serial.Serial) -> None:
+def enter_program_mode(ser: serial.Serial) -> bytes:
     send(ser, bytes([0x47, 0x00, 0x00, 0x00, 0x00, 0x01]), pause=0.1)
-    collect_window(ser, window=0.15)
+    response = collect_window(ser, window=0.4)
+    if response:
+        preview = hexdump(response[:16])
+        print(f"G query response: {len(response)} bytes (preview {preview})")
+    else:
+        print("G query response: (no data)")
     for frame in (
         bytes.fromhex("FF FF FF FF 0C") + b"PROGRAM",
         bytes([0x02]),
@@ -141,6 +351,7 @@ def enter_program_mode(ser: serial.Serial) -> None:
         send(ser, frame, pause=0.05)
     ser.reset_input_buffer()
     time.sleep(0.05)
+    return response
 
 
 def perform_handshake(ser: serial.Serial) -> tuple[Optional[str], bytes]:
@@ -277,6 +488,32 @@ def capture_reads(ser: serial.Serial, output_dir: Path) -> None:
         print(f"Saved {len(data)} bytes to {path}")
 
 
+def save_g_query(data: bytes, output_dir: Path) -> None:
+    if not data:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "g_query.bin"
+    path.write_bytes(data)
+    print(f"Saved {len(data)} bytes from G query to {path}")
+
+
+def capture_small_reads(ser: serial.Serial, output_dir: Path) -> None:
+    if not SMALL_READS:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_lines: list[str] = []
+    for index, (address, length) in enumerate(SMALL_READS, start=1):
+        data = read_block(ser, address, length)
+        stem = f"{index:03d}_0x{address:06X}_len{length:02d}"
+        path = output_dir / f"{stem}.bin"
+        path.write_bytes(data)
+        manifest_lines.append(f"{stem}.bin\t0x{address:06X}\t{length}")
+        print(f"Saved {len(data)} bytes to {path}")
+    manifest_path = output_dir / "manifest.tsv"
+    manifest_path.write_text("filename\taddress\tlength\n" + "\n".join(manifest_lines))
+    print(f"Saved small-read manifest to {manifest_path}")
+
+
 def autodetect_port() -> Optional[str]:
     preferred = Path("/dev/cu.usbserial-10")
     fallback = Path("/dev/cu.usbserial-110")
@@ -337,8 +574,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Board ID     : {board_id or '(not found)'}")
         save_handshake(handshake_bytes, output_dir)
 
-        enter_program_mode(ser)
+        g_query_bytes = enter_program_mode(ser)
+        save_g_query(g_query_bytes, output_dir)
         print("PROGRAM mode sequence sent.")
+
+        small_dir = output_dir / "small_reads"
+        capture_small_reads(ser, small_dir)
 
         v_results, v_frames = probe_v_frames(ser)
         print(
