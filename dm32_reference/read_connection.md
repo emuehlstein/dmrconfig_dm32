@@ -2,21 +2,35 @@
 
 This document summarizes the observed serial protocol used by the Baofeng DM‑32UV CPS during a “read from radio,” and correlates it with memory regions that contain Channels, Zones, Contacts (Talkgroups), RX Groups, Scan Lists, and other labels.
 
-It is grounded in the latest capture logs:
 
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_dmrva_read.txt`
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_dmrva_write.txt`
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_read.txt`
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_write.txt`
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_read.txt`
-- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_write.txt`
+## Table of contents
 
-and cross‑checked against the extracted content in:
+- [DM-32UV read connection and memory fetch protocol](#dm-32uv-read-connection-and-memory-fetch-protocol)
+  - [Table of contents](#table-of-contents)
+  - [High-level flow](#high-level-flow)
+    - [1. Initial ASCII handshake](#1-initial-ascii-handshake)
+    - [2. Version/info probes (V frames)](#2-versioninfo-probes-v-frames)
+      - [V-frame catalog (observed)](#v-frame-catalog-observed)
+      - [Pointer decoding and tracking](#pointer-decoding-and-tracking)
+      - [Dynamic partition map (decoded from V-frames)](#dynamic-partition-map-decoded-from-v-frames)
+    - [3. Resource fetch (optional)](#3-resource-fetch-optional)
+    - [4. Enter PROGRAM mode](#4-enter-program-mode)
+    - [5. Random access memory reads (R/W frames)](#5-random-access-memory-reads-rw-frames)
+      - [5.1 FFxx probe matrix (201 single-byte reads)](#51-ffxx-probe-matrix-201-single-byte-reads)
+    - [4. Order of observed 4 KiB reads](#4-order-of-observed-4-kib-reads)
+      - [FFxx option probe matrix results and artifacts](#ffxx-option-probe-matrix-results-and-artifacts)
+  - [Component locations and markers](#component-locations-and-markers)
+  - [Expected image size](#expected-image-size)
+  - [Quick memory map (observed)](#quick-memory-map-observed)
+  - [Protocol "contract" summary](#protocol-contract-summary)
+  - [References](#references)
+  - [Cross-reference: CSVs and memory](#cross-reference-csvs-and-memory)
+  - [Examples (from capture)](#examples-from-capture)
+  - [Notes and next steps](#notes-and-next-steps)
+  - [V-frame quick reference](#v-frame-quick-reference)
 
-- `dm32_reference/exports/factory/` (CSV reference matching factory data)
-- `dm32_reference/exports/dmrva/` (CSV reference matching the dmrva data and captures)
 
-## high‑level flow
+## High-level flow
 
 ### 1. Initial ASCII handshake
 
@@ -57,75 +71,38 @@ Examples:
 - `56 0F 08 00 80 27 00 FF BF 6D 00` → pointer `00 80 27 00` (0x008027) into contacts region
 - `56 10 03 50 C3 00` → 3‑byte value (purpose TBD)
 
-#### V‑frame catalog (observed)
+#### V-frame catalog (observed)
 
 Use this section to track known V‑frame IDs, their payload shapes, and likely semantics. The reply format is always:
 
 - `56 <id> <len> <payload[len]>`
 
-Observed IDs in these captures (both dmrva and factory reads show the same set):
+Observed IDs in these captures (factory, DMRVA, GBFMcCall, and EricPlug all responded with the same bytes). The table highlights the baseline payloads and where differences would appear:
 
-- `0x01` — Firmware version (ASCII)
-  - Example payload: `44 4D 33 32 2E 30 31 2E 30 31 2E 30 34 36` → “DM32.01.01.046”
-  - Typical length: 0x0E (14), may vary by build.
+| Id | Len | Factory | DMRVA | GBF | Eric | Notes |
+| --- | --- | ------- | ----- | --- | ---- | ----- |
+| 0x01 | 0x0E | `DM32.01.01.046` | — | — | — | Firmware version string (ASCII). |
+| 0x02 | 0x0C | `00 00 00 00 00 00 15 A4 00 00 15 A4` | — | — | — | Two identical 0x15A4 counters; likely capacity limits (TBD). |
+| 0x03 | 0x0A | `2022-06-27` | — | — | — | Firmware build date (ASCII). |
+| 0x04 | 0x0C | `D1.01.01.004` | — | — | — | D-module version string. |
+| 0x05 | 0x0C | `R1.00.01.001` | — | — | — | R-module version string. |
+| 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | — | Pointer tuple → 0x5000-byte segment, 38-byte records. |
+| 0x07 | 0x08 | `addr=0x00900C mask=0x9FFF stride=0x0014` | — | — | — | Pointer tuple for secondary table. |
+| 0x08 | 0x08 | `addr=0x000018 mask=0x0FFF stride=0x0020` | — | — | — | Pointer tuple (records of size 0x20). |
+| 0x09 | 0x08 | `addr=0x00C06D mask=0xFFFF stride=0x00FF` | — | — | — | Pointer tuple; stride 0xFF suggests variable-length blob. |
+| 0x0A | 0x08 | `addr=0x001000 mask=0x8FFF stride=0x000C` | — | — | — | Pointer tuple into housekeeping region. |
+| 0x0B | 0x0C | `C1.00.01.001` | — | — | — | C-module version string. |
+| 0x0D | 0x40 | `034E2D00 ... 003F0000 ...` | — | — | — | 64-byte capabilities block emitted once when `56 00 00 40 0D` is sent. |
+| 0x0D | 0x00 | `0 bytes` | — | — | — | Normal poll reply after the handshake (empty). |
+| 0x0E | 0x08 | `addr=0x000015 mask=0x5FFF stride=0x0017` | — | — | — | Pointer tuple for ancillary table. |
+| 0x0F | 0x08 | `addr=0x008027 mask=0xBFFF stride=0x006D` | — | — | — | Pointer bundle CPS immediately dereferences with `R (0x52)`. |
+| 0x10 | 0x03 | `50 C3 00` | — | — | — | Three-byte status/flag value (purpose TBD). |
 
-- `0x03` — Build date (ASCII)
-  - Example payload: `32 30 32 32 2D 30 36 2D 32 37` → “2022‑06‑27”
-  - Typical length: 0x0A (10).
-
-- `0x02` — Limits/metrics (binary)
-  - Example payload (12 bytes): `00 00 00 00 00 00 15 A4 00 00 15 A4`
-  - Two repeated 16‑bit values `0x15A4` appear; likely counts or size limits (TBD).
-
-- `0x04` — D‑module version (ASCII)
-  - Example payload: `44 31 2E 30 31 2E 30 31 2E 30 30 34` → “D1.01.01.004”
-  - Typical length: 0x0C (12).
-
-- `0x05` — R‑module version (ASCII)
-  - Example payload: `52 31 2E 30 30 2E 30 31 2E 30 30 31` → “R1.00.01.001”
-  - Typical length: 0x0C (12).
-
-- `0x06` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 10 20 00 FF 4F 26 00`
-  - Interpretation: base `0x001020`, mask_le `0x4FFF`, stride_le `0x0026` → segment_size `0x5000` (20 KiB), record_size 38.
-
-- `0x07` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 90 0C 00 FF 9F 14 00` → `addr=0x00900C`, tail `0x149F`.
-
-- `0x08` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 00 18 00 FF 0F 20 00` → `addr=0x000018`, tail `0x200F`.
-
-- `0x09` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 C0 6D 00 FF FF FF 00` → `addr=0x00C06D`, tail all `0xFF`.
-
-- `0x0A` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 10 00 00 FF 8F 0C 00` → `addr=0x001000`, tail `0x0C8F`.
-
-- `0x0B` — C‑module version (ASCII)
-  - Example payload: `43 31 2E 30 30 2E 30 31 2E 30 30 31` → “C1.00.01.001”
-  - Typical length: 0x0C (12).
-
-- `0x0D` — Empty
-  - Two modes observed:
-    - Handshake mode (triggered by `56 00 00 40 0D`): length `0x40` (64‑byte capabilities/feature block). Example prefix: `03 4E 2D 00 … 00 3F 00 …`.
-    - Normal poll (`56 00 00 00 0D`): length `0x00` (no data).
-
-- `0x0E` — Pointer tuple (binary)
-  - Example payload (8 bytes): `00 00 15 00 FF 5F 17 00` → `addr=0x000015`, tail `0x175F`.
-
-- `0x0F` — Pointer bundle (binary)
-  - Example payload (8 bytes): `00 80 27 00 FF BF 6D 00`
-  - Interpretation:
-    - Bytes 0–2: 24‑bit big‑endian address used by `R (0x52)` reads (here: `00 80 27` → 0x008027)
-    - Byte 3: padding `0x00`
-    - Bytes 4–7: additional fields (unknown); may be flags, limits, or checksums. In example: `FF BF 6D 00`.
-  - Validation from capture: immediately after this frame, CPS probes `52 00 80 27 04 00` and receives `57 00 80 27 04 00 01 00 00 00`.
-
-- `0x10` — Binary value (purpose TBD)
-  - Example payload (3 bytes): `50 C3 00` (endian/meaning unknown)
+- `0x0D` handshake payload details: treating the 64-byte blob as 16 little-endian 32-bit words leaves only two non-zero entries. Word 0 is `0x002D4E03` (raw bytes `03 4E 2D 00`, i.e., leading length byte 0x03 followed by the ASCII string `N-\0`); word 8 is `0x0000003F`, which looks like a 6-bit feature mask. The remaining fourteen words are zero across all captures examined so far.
+- Practical takeaway: the host appears to use this block as a coarse capability gate — the CPS never re-requests it after the initial probe, and it does not change between codeplugs.
 
 - `0x40` — Special probe used once as `56 00 00 40 0D` (request)
-  - Acts as a capability/version ping; not a normal `<id>` query. Only this probe is CR‑terminated in our capture.
+  - Acts as a capability/version ping; not a normal `<id>` query. Only this probe is CR-terminated in our capture.
 
 Notes:
 
@@ -153,7 +130,7 @@ Validation tips:
 - After parsing, you can immediately probe the base address with a tiny `R (0x52)` read to confirm. CPS itself does this after `id=0x0F`.
 - The tuple values are stable across captures (factory, dmrva, GBFMcCall), so prefer them over any static memory map.
 
-#### Dynamic partition map (decoded from V‑frames)
+#### Dynamic partition map (decoded from V-frames)
 
 Observed stable tuples across all three captures. For each id: base, segment size (bytes and KiB), record size (bytes), and an implied maximum record count when fixed.
 
@@ -175,7 +152,24 @@ Notes:
 ### 3. Resource fetch (optional)
 
 - Host → Radio: `47 00 00 00 00 01`
-- Radio → Host: large `0x53` payload (bitmap/font/splash‑like), then long runs of `0xFF`.
+- Radio → Host: a single `0x53` frame containing 262 bytes. Every capture we have (factory, DMRVA, GBFMcCall, EricPlug) returns an identical blob:
+
+  ```text
+  0000: 53 00 00 00 00 01 FF FF FF FF FF FF FF FF FF FF S...............
+  0040: FF FF FF FF FF FF 36 00 00 00 00 00 00 00 00 00 ......6.........
+  0060: FF FF FF FF FF FF 00 FF FF FF FF FF FF FF FF FF .................
+  0070: FF FF FF FF FF FF DF FF DF FF FF FF BE F7 79 CE ..............y.
+  0080: D6 B5 79 CE BE F7 FF FF EF DE 1C E7 3D E7 9A D6 ..y.........=...
+  0090: F4 9C 55 A5 FB D6 5E DF 5D E7 5D E7 5D E7 7D EF ..U...^.].].].}.
+  00A0: 92 94 C7 39 49 4A 69 A5 69 4A AA 52 AA 52 8A 52 ...9IJi.iJ.R.R.R
+  00B0: 28 42 65 29 08 43 60 13 40 17 60 13 40 17 00 40 (Be).C`.@.`.@..@
+  00C0: 00 52 00 40 00 52 FF ... (remainder padded with 0xFF)
+  ```
+
+- Observations:
+  - The first six bytes (`53 00 00 00 00 01`) look like an `S` frame header with payload id `0x0000` and a single resource bank.
+  - Offsets `0x70`–`0xC3` contain non-`0xFF` words such as `BE F7`, `79 CE`, `D6 B5`, which decode cleanly as RGB565 colour values. This points to a baked bitmap/tile (likely a CPS splash/icon asset).
+  - The CPS never re-requests the block during a session, and the region is invariant across all codeplugs tested, so consumers can treat it as static artwork.
 
 ### 4. Enter PROGRAM mode
 
@@ -189,6 +183,7 @@ Notes:
 After this handshake, the radio accepts random‑access memory reads.
 
 ### 5. Random access memory reads (R/W frames)
+
 - Read request (host → radio):
   - `0x52` + 24‑bit address (big‑endian, 3 bytes) + 16‑bit length (little‑endian, 2 bytes)
   - Example: `52 00 80 27 04 00` → read 4 bytes at 0x008027
@@ -201,6 +196,7 @@ Notes:
 
 - The CPS issues many single‑byte reads in the 0xFFxxxx range (`52 FF .. .. 01 00`), likely status/keepalive probes.
 - Substantive data is fetched in 4 KiB pages from a fixed set of addresses.
+- Write captures mirror this split: the CPS first pushes `0x52 ... 01 00` frames into the 0xFFxxxx window (shown as "EEPROM" in the OEM UI) before switching to the multi-kilobyte transfers at the flash partition bases outlined above.
 
 #### 5.1 FFxx probe matrix (201 single-byte reads)
 
@@ -213,257 +209,299 @@ Before the 4 KiB transfers begin, the CPS performs a fixed sweep of 201 single
 
 | Idx | Address | Len | Factory | DMRVA | GBF | Eric | Notes |
 | --- | ------- | --- | ------- | ----- | --- | ---- | ----- |
-| 001 | 0x008027 | 0x0004 | 0x01 | 0x01 | 0x01 | 0x01 |  |
-| 002 | 0xFF1F00 | 0x0001 | 0x07 | 0x07 | 0x07 | 0x07 |  |
-| 003 | 0xFF2F00 | 0x0001 | 0x20 | 0x20 | 0x20 | 0x20 |  |
-| 004 | 0xFF3F00 | 0x0001 | 0x34 | 0x34 | 0x34 | 0x34 |  |
-| 005 | 0xFF4F00 | 0x0001 | 0x09 | 0x09 | 0x09 | 0x09 |  |
-| 006 | 0xFF5F00 | 0x0001 | 0x0A | 0x0A | 0x0A | 0x0A |  |
-| 007 | 0xFF6F00 | 0x0001 | 0x54 | 0x54 | 0x54 | 0x54 |  |
-| 008 | 0xFF7F00 | 0x0001 | 0x06 | 0x06 | 0x06 | 0x06 |  |
-| 009 | 0xFF8F00 | 0x0001 | 0x42 | 0x42 | 0x42 | 0x00 |  |
-| 010 | 0xFF9F00 | 0x0001 | 0x67 | 0x67 | 0x67 | 0x67 |  |
-| 011 | 0xFFAF00 | 0x0001 | 0x43 | 0x43 | 0x43 | 0x43 |  |
-| 012 | 0xFFBF00 | 0x0001 | 0x44 | 0x44 | 0x44 | 0x00 |  |
-| 013 | 0xFFCF00 | 0x0001 | 0x10 | 0x10 | 0x10 | 0x10 |  |
-| 014 | 0xFFDF00 | 0x0001 | 0x30 | 0x30 | 0x30 | 0x30 |  |
-| 015 | 0xFFEF00 | 0x0001 | 0x0D | 0x0D | 0x0D | 0x00 |  |
-| 016 | 0xFFFF00 | 0x0001 | 0x0F | 0x0F | 0x0F | 0x0F |  |
-| 017 | 0xFF0F01 | 0x0001 | 0x41 | 0x41 | 0x41 | 0x15 |  |
-| 018 | 0xFF1F01 | 0x0001 | 0x03 | 0x03 | 0x03 | 0x03 |  |
-| 019 | 0xFF2F01 | 0x0001 | 0x59 | 0x59 | 0x59 | 0x59 |  |
-| 020 | 0xFF3F01 | 0x0001 | 0x5D | 0x5D | 0x5D | 0x5D |  |
-| 021 | 0xFF4F01 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 022 | 0xFF5F01 | 0x0001 | 0x13 | 0x13 | 0x13 | 0x13 |  |
-| 023 | 0xFF6F01 | 0x0001 | 0x55 | 0x55 | 0x55 | 0x55 |  |
-| 024 | 0xFF7F01 | 0x0001 | 0x14 | 0x14 | 0x14 | 0x14 |  |
-| 025 | 0xFF8F01 | 0x0001 | 0x65 | 0x65 | 0x65 | 0x65 |  |
-| 026 | 0xFF9F01 | 0x0001 | 0x57 | 0x57 | 0x57 | 0x57 |  |
-| 027 | 0xFFAF01 | 0x0001 | 0x50 | 0x50 | 0x50 | 0x50 |  |
-| 028 | 0xFFBF01 | 0x0001 | 0x52 | 0x52 | 0x52 | 0x52 |  |
-| 029 | 0xFFCF01 | 0x0001 | 0x5B | 0x5B | 0x5B | 0x5B |  |
-| 030 | 0xFFDF01 | 0x0001 | 0x66 | 0x66 | 0x66 | 0x66 |  |
-| 031 | 0xFFEF01 | 0x0001 | 0x6A | 0x6A | 0x6A | 0x6A |  |
-| 032 | 0xFFFF01 | 0x0001 | 0x53 | 0x53 | 0x53 | 0x53 |  |
-| 033 | 0xFF0F02 | 0x0001 | 0x1F | 0x1F | 0x1F | 0x1F |  |
-| 034 | 0xFF1F02 | 0x0001 | 0x4F | 0x4F | 0x4F | 0x4F |  |
-| 035 | 0xFF2F02 | 0x0001 | 0x5F | 0x5F | 0x5F | 0x5F |  |
-| 036 | 0xFF3F02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x44 |  |
-| 037 | 0xFF4F02 | 0x0001 | 0x58 | 0x58 | 0x58 | 0x58 |  |
-| 038 | 0xFF5F02 | 0x0001 | 0x6D | 0x6D | 0x6D | 0x6D |  |
+| 001 | 0x008027 | 0x0004 | 0x01 | — | — | — |  |
+| 002 | 0xFF1F00 | 0x0001 | 0x07 | — | — | — |  |
+| 003 | 0xFF2F00 | 0x0001 | 0x20 | — | — | — |  |
+| 004 | 0xFF3F00 | 0x0001 | 0x34 | — | — | — |  |
+| 005 | 0xFF4F00 | 0x0001 | 0x09 | — | — | — |  |
+| 006 | 0xFF5F00 | 0x0001 | 0x0A | — | — | — |  |
+| 007 | 0xFF6F00 | 0x0001 | 0x54 | — | — | — |  |
+| 008 | 0xFF7F00 | 0x0001 | 0x06 | — | — | — |  |
+| 009 | 0xFF8F00 | 0x0001 | 0x42 | — | — | 0x00 |  |
+| 010 | 0xFF9F00 | 0x0001 | 0x67 | — | — | — |  |
+| 011 | 0xFFAF00 | 0x0001 | 0x43 | — | — | — |  |
+| 012 | 0xFFBF00 | 0x0001 | 0x44 | — | — | 0x00 |  |
+| 013 | 0xFFCF00 | 0x0001 | 0x10 | — | — | — |  |
+| 014 | 0xFFDF00 | 0x0001 | 0x30 | — | — | — |  |
+| 015 | 0xFFEF00 | 0x0001 | 0x0D | — | — | 0x00 |  |
+| 016 | 0xFFFF00 | 0x0001 | 0x0F | — | — | — |  |
+| 017 | 0xFF0F01 | 0x0001 | 0x41 | — | — | 0x15 |  |
+| 018 | 0xFF1F01 | 0x0001 | 0x03 | — | — | — |  |
+| 019 | 0xFF2F01 | 0x0001 | 0x59 | — | — | — |  |
+| 020 | 0xFF3F01 | 0x0001 | 0x5D | — | — | — |  |
+| 021 | 0xFF4F01 | 0x0001 | 0x00 | — | — | — |  |
+| 022 | 0xFF5F01 | 0x0001 | 0x13 | — | — | — |  |
+| 023 | 0xFF6F01 | 0x0001 | 0x55 | — | — | — |  |
+| 024 | 0xFF7F01 | 0x0001 | 0x14 | — | — | — |  |
+| 025 | 0xFF8F01 | 0x0001 | 0x65 | — | — | — |  |
+| 026 | 0xFF9F01 | 0x0001 | 0x57 | — | — | — |  |
+| 027 | 0xFFAF01 | 0x0001 | 0x50 | — | — | — |  |
+| 028 | 0xFFBF01 | 0x0001 | 0x52 | — | — | — |  |
+| 029 | 0xFFCF01 | 0x0001 | 0x5B | — | — | — |  |
+| 030 | 0xFFDF01 | 0x0001 | 0x66 | — | — | — |  |
+| 031 | 0xFFEF01 | 0x0001 | 0x6A | — | — | — |  |
+| 032 | 0xFFFF01 | 0x0001 | 0x53 | — | — | — |  |
+| 033 | 0xFF0F02 | 0x0001 | 0x1F | — | — | — |  |
+| 034 | 0xFF1F02 | 0x0001 | 0x4F | — | — | — |  |
+| 035 | 0xFF2F02 | 0x0001 | 0x5F | — | — | — |  |
+| 036 | 0xFF3F02 | 0x0001 | 0x00 | — | — | 0x44 |  |
+| 037 | 0xFF4F02 | 0x0001 | 0x58 | — | — | — |  |
+| 038 | 0xFF5F02 | 0x0001 | 0x6D | — | — | — |  |
 | 039 | 0xFF6F02 | 0x0001 | 0x04 | 0x00 | 0x00 | 0x0B |  |
-| 040 | 0xFF7F02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 041 | 0xFF8F02 | 0x0001 | 0x3B | 0x3B | 0x3B | 0x3B |  |
-| 042 | 0xFF9F02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 043 | 0xFFAF02 | 0x0001 | 0x1C | 0x1C | 0x1C | 0x1C |  |
-| 044 | 0xFFBF02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 045 | 0xFFCF02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 046 | 0xFFDF02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 047 | 0xFFEF02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 048 | 0xFFFF02 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 049 | 0xFF0F03 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 050 | 0xFF1F03 | 0x0001 | 0x37 | 0x37 | 0x37 | 0x37 |  |
-| 051 | 0xFF2F03 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x42 |  |
-| 052 | 0xFF3F03 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x00 |  |
-| 053 | 0xFF4F03 | 0x0001 | 0x00 | 0x00 | 0x00 | 0x5C |  |
-| 054 | 0xFF5F03 | 0x0001 | 0x5C | 0x5C | 0x00 | 0x0E |  |
+| 040 | 0xFF7F02 | 0x0001 | 0x00 | — | — | — |  |
+| 041 | 0xFF8F02 | 0x0001 | 0x3B | — | — | — |  |
+| 042 | 0xFF9F02 | 0x0001 | 0x00 | — | — | — |  |
+| 043 | 0xFFAF02 | 0x0001 | 0x1C | — | — | — |  |
+| 044 | 0xFFBF02 | 0x0001 | 0x00 | — | — | — |  |
+| 045 | 0xFFCF02 | 0x0001 | 0x00 | — | — | — |  |
+| 046 | 0xFFDF02 | 0x0001 | 0x00 | — | — | — |  |
+| 047 | 0xFFEF02 | 0x0001 | 0x00 | — | — | — |  |
+| 048 | 0xFFFF02 | 0x0001 | 0x00 | — | — | — |  |
+| 049 | 0xFF0F03 | 0x0001 | 0x00 | — | — | — |  |
+| 050 | 0xFF1F03 | 0x0001 | 0x37 | — | — | — |  |
+| 051 | 0xFF2F03 | 0x0001 | 0x00 | — | — | 0x42 |  |
+| 052 | 0xFF3F03 | 0x0001 | 0x00 | — | — | — |  |
+| 053 | 0xFF4F03 | 0x0001 | 0x00 | — | — | 0x5C |  |
+| 054 | 0xFF5F03 | 0x0001 | 0x5C | — | 0x00 | 0x0E |  |
 | 055 | 0xFF6F03 | 0x0001 | 0xFF | 0x04 | 0x04 | 0x0C |  |
-| 056 | 0xFF7F03 | 0x0001 | 0xFF | 0xFF | 0x00 | 0x04 |  |
-| 057 | 0xFF8F03 | 0x0001 | 0xFF | 0xFF | 0x00 | 0xFF |  |
-| 058 | 0xFF9F03 | 0x0001 | 0x05 | 0x05 | 0x05 | 0x05 |  |
-| 059 | 0xFFAF03 | 0x0001 | 0xFF | 0xFF | 0x00 | 0xFF |  |
-| 060 | 0xFFBF03 | 0x0001 | 0xFF | 0xFF | 0x5C | 0xFF |  |
-| 061 | 0xFFCF03 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 062 | 0xFFDF03 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 063 | 0xFFEF03 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 064 | 0xFFFF03 | 0x0001 | 0x32 | 0x32 | 0x32 | 0x32 |  |
-| 065 | 0xFF0F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 066 | 0xFF1F04 | 0x0001 | 0x22 | 0x22 | 0x22 | 0x22 |  |
-| 067 | 0xFF2F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 068 | 0xFF3F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 069 | 0xFF4F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 070 | 0xFF5F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 071 | 0xFF6F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 072 | 0xFF7F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 073 | 0xFF8F04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 074 | 0xFF9F04 | 0x0001 | 0x31 | 0x31 | 0x31 | 0x31 |  |
-| 075 | 0xFFAF04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 076 | 0xFFBF04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 077 | 0xFFCF04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 078 | 0xFFDF04 | 0x0001 | 0x5A | 0x5A | 0x5A | 0x5A |  |
-| 079 | 0xFFEF04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 080 | 0xFFFF04 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 081 | 0xFF0F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0x0D |  |
-| 082 | 0xFF1F05 | 0x0001 | 0x6C | 0x6C | 0x6C | 0x6C |  |
-| 083 | 0xFF2F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 084 | 0xFF3F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 085 | 0xFF4F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 086 | 0xFF5F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 087 | 0xFF6F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 088 | 0xFF7F05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 089 | 0xFF8F05 | 0x0001 | 0x0E | 0x0E | 0x0E | 0xFF |  |
-| 090 | 0xFF9F05 | 0x0001 | 0x75 | 0x75 | 0x75 | 0x75 |  |
-| 091 | 0xFFAF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 092 | 0xFFBF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 093 | 0xFFCF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 094 | 0xFFDF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 095 | 0xFFEF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 096 | 0xFFFF05 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 097 | 0xFF0F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 098 | 0xFF1F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 099 | 0xFF2F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 100 | 0xFF3F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 101 | 0xFF4F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 102 | 0xFF5F06 | 0x0001 | 0x74 | 0x74 | 0x74 | 0x74 |  |
-| 103 | 0xFF6F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 104 | 0xFF7F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 105 | 0xFF8F06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 106 | 0xFF9F06 | 0x0001 | 0x64 | 0x64 | 0x64 | 0x64 |  |
-| 107 | 0xFFAF06 | 0x0001 | 0x02 | 0x02 | 0x02 | 0x02 |  |
-| 108 | 0xFFBF06 | 0x0001 | 0x11 | 0x11 | 0x11 | 0xFF |  |
-| 109 | 0xFFCF06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 110 | 0xFFDF06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 111 | 0xFFEF06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 112 | 0xFFFF06 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 113 | 0xFF0F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 114 | 0xFF1F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 115 | 0xFF2F07 | 0x0001 | 0x1A | 0x1A | 0x1A | 0x1A |  |
-| 116 | 0xFF3F07 | 0x0001 | 0x18 | 0x18 | 0x18 | 0x18 |  |
-| 117 | 0xFF4F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 118 | 0xFF5F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 119 | 0xFF6F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 120 | 0xFF7F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 121 | 0xFF8F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 122 | 0xFF9F07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 123 | 0xFFAF07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 124 | 0xFFBF07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 125 | 0xFFCF07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 126 | 0xFFDF07 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 127 | 0xFFEF07 | 0x0001 | 0x5E | 0x5E | 0x5E | 0x5E |  |
-| 128 | 0xFFFF07 | 0x0001 | 0x6E | 0x6E | 0x6E | 0x6E |  |
-| 129 | 0xFF0F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 130 | 0xFF1F08 | 0x0001 | 0x56 | 0x56 | 0x56 | 0x56 |  |
-| 131 | 0xFF2F08 | 0x0001 | 0x60 | 0x60 | 0x60 | 0x60 |  |
-| 132 | 0xFF3F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 133 | 0xFF4F08 | 0x0001 | 0x3D | 0x3D | 0x3D | 0x3D |  |
-| 134 | 0xFF5F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 135 | 0xFF6F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 136 | 0xFF7F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 137 | 0xFF8F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 138 | 0xFF9F08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 139 | 0xFFAF08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 140 | 0xFFBF08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0x11 |  |
-| 141 | 0xFFCF08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 142 | 0xFFDF08 | 0x0001 | 0x0B | 0x0B | 0x0B | 0xFF |  |
-| 143 | 0xFFEF08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 144 | 0xFFFF08 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 145 | 0xFF0F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 146 | 0xFF1F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 147 | 0xFF2F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 148 | 0xFF3F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 149 | 0xFF4F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 150 | 0xFF5F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 151 | 0xFF6F09 | 0x0001 | 0x6B | 0x6B | 0x6B | 0x6B |  |
-| 152 | 0xFF7F09 | 0x0001 | 0x01 | 0x01 | 0x01 | 0x01 |  |
-| 153 | 0xFF8F09 | 0x0001 | 0x7C | 0x7C | 0x7C | 0x7C |  |
-| 154 | 0xFF9F09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 155 | 0xFFAF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 156 | 0xFFBF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 157 | 0xFFCF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 158 | 0xFFDF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 159 | 0xFFEF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 160 | 0xFFFF09 | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 161 | 0xFF0F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 162 | 0xFF1F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 163 | 0xFF2F0A | 0x0001 | 0x23 | 0x23 | 0x23 | 0x23 |  |
-| 164 | 0xFF3F0A | 0x0001 | 0x00 | 0x00 | 0x00 | 0xFF |  |
-| 165 | 0xFF4F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 166 | 0xFF5F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 167 | 0xFF6F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 168 | 0xFF7F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 169 | 0xFF8F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 170 | 0xFF9F0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 171 | 0xFFAF0A | 0x0001 | 0x12 | 0x12 | 0x12 | 0x41 |  |
-| 172 | 0xFFBF0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 173 | 0xFFCF0A | 0x0001 | 0x51 | 0x51 | 0x51 | 0x51 |  |
-| 174 | 0xFFDF0A | 0x0001 | 0x1D | 0x1D | 0x1D | 0x1D |  |
-| 175 | 0xFFEF0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 176 | 0xFFFF0A | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 177 | 0xFF0F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 178 | 0xFF1F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 179 | 0xFF2F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 180 | 0xFF3F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 181 | 0xFF4F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 182 | 0xFF5F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 183 | 0xFF6F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 184 | 0xFF7F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 185 | 0xFF8F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 186 | 0xFF9F0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 187 | 0xFFAF0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 188 | 0xFFBF0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 189 | 0xFFCF0B | 0x0001 | 0x69 | 0x69 | 0x69 | 0x69 |  |
-| 190 | 0xFFDF0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 191 | 0xFFEF0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 192 | 0xFFFF0B | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 193 | 0xFF0F0C | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 194 | 0xFF1F0C | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 195 | 0xFF2F0C | 0x0001 | 0xFF | 0xFF | 0xFF | 0x12 |  |
-| 196 | 0xFF3F0C | 0x0001 | 0x08 | 0x08 | 0x08 | 0x08 |  |
-| 197 | 0xFF4F0C | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 198 | 0xFF5F0C | 0x0001 | 0x4B | 0x4B | 0x4B | 0x4B |  |
-| 199 | 0xFF6F0C | 0x0001 | 0xFF | 0xFF | 0xFF | 0xFF |  |
-| 200 | 0xFF7F0C | 0x0001 | 0x00 | 0x00 | 0x00 | 0xFF |  |
-| 201 | 0xFF8F0C | 0x0001 | 0x0C | 0x0C | 0x0C | 0xFF |  |
+| 056 | 0xFF7F03 | 0x0001 | 0xFF | — | 0x00 | 0x04 |  |
+| 057 | 0xFF8F03 | 0x0001 | 0xFF | — | 0x00 | — |  |
+| 058 | 0xFF9F03 | 0x0001 | 0x05 | — | — | — |  |
+| 059 | 0xFFAF03 | 0x0001 | 0xFF | — | 0x00 | — |  |
+| 060 | 0xFFBF03 | 0x0001 | 0xFF | — | 0x5C | — |  |
+| 061 | 0xFFCF03 | 0x0001 | 0xFF | — | — | — |  |
+| 062 | 0xFFDF03 | 0x0001 | 0xFF | — | — | — |  |
+| 063 | 0xFFEF03 | 0x0001 | 0xFF | — | — | — |  |
+| 064 | 0xFFFF03 | 0x0001 | 0x32 | — | — | — |  |
+| 065 | 0xFF0F04 | 0x0001 | 0xFF | — | — | — |  |
+| 066 | 0xFF1F04 | 0x0001 | 0x22 | — | — | — |  |
+| 067 | 0xFF2F04 | 0x0001 | 0xFF | — | — | — |  |
+| 068 | 0xFF3F04 | 0x0001 | 0xFF | — | — | — |  |
+| 069 | 0xFF4F04 | 0x0001 | 0xFF | — | — | — |  |
+| 070 | 0xFF5F04 | 0x0001 | 0xFF | — | — | — |  |
+| 071 | 0xFF6F04 | 0x0001 | 0xFF | — | — | — |  |
+| 072 | 0xFF7F04 | 0x0001 | 0xFF | — | — | — |  |
+| 073 | 0xFF8F04 | 0x0001 | 0xFF | — | — | — |  |
+| 074 | 0xFF9F04 | 0x0001 | 0x31 | — | — | — |  |
+| 075 | 0xFFAF04 | 0x0001 | 0xFF | — | — | — |  |
+| 076 | 0xFFBF04 | 0x0001 | 0xFF | — | — | — |  |
+| 077 | 0xFFCF04 | 0x0001 | 0xFF | — | — | — |  |
+| 078 | 0xFFDF04 | 0x0001 | 0x5A | — | — | — |  |
+| 079 | 0xFFEF04 | 0x0001 | 0xFF | — | — | — |  |
+| 080 | 0xFFFF04 | 0x0001 | 0xFF | — | — | — |  |
+| 081 | 0xFF0F05 | 0x0001 | 0xFF | — | — | 0x0D |  |
+| 082 | 0xFF1F05 | 0x0001 | 0x6C | — | — | — |  |
+| 083 | 0xFF2F05 | 0x0001 | 0xFF | — | — | — |  |
+| 084 | 0xFF3F05 | 0x0001 | 0xFF | — | — | — |  |
+| 085 | 0xFF4F05 | 0x0001 | 0xFF | — | — | — |  |
+| 086 | 0xFF5F05 | 0x0001 | 0xFF | — | — | — |  |
+| 087 | 0xFF6F05 | 0x0001 | 0xFF | — | — | — |  |
+| 088 | 0xFF7F05 | 0x0001 | 0xFF | — | — | — |  |
+| 089 | 0xFF8F05 | 0x0001 | 0x0E | — | — | 0xFF |  |
+| 090 | 0xFF9F05 | 0x0001 | 0x75 | — | — | — |  |
+| 091 | 0xFFAF05 | 0x0001 | 0xFF | — | — | — |  |
+| 092 | 0xFFBF05 | 0x0001 | 0xFF | — | — | — |  |
+| 093 | 0xFFCF05 | 0x0001 | 0xFF | — | — | — |  |
+| 094 | 0xFFDF05 | 0x0001 | 0xFF | — | — | — |  |
+| 095 | 0xFFEF05 | 0x0001 | 0xFF | — | — | — |  |
+| 096 | 0xFFFF05 | 0x0001 | 0xFF | — | — | — |  |
+| 097 | 0xFF0F06 | 0x0001 | 0xFF | — | — | — |  |
+| 098 | 0xFF1F06 | 0x0001 | 0xFF | — | — | — |  |
+| 099 | 0xFF2F06 | 0x0001 | 0xFF | — | — | — |  |
+| 100 | 0xFF3F06 | 0x0001 | 0xFF | — | — | — |  |
+| 101 | 0xFF4F06 | 0x0001 | 0xFF | — | — | — |  |
+| 102 | 0xFF5F06 | 0x0001 | 0x74 | — | — | — |  |
+| 103 | 0xFF6F06 | 0x0001 | 0xFF | — | — | — |  |
+| 104 | 0xFF7F06 | 0x0001 | 0xFF | — | — | — |  |
+| 105 | 0xFF8F06 | 0x0001 | 0xFF | — | — | — |  |
+| 106 | 0xFF9F06 | 0x0001 | 0x64 | — | — | — |  |
+| 107 | 0xFFAF06 | 0x0001 | 0x02 | — | — | — |  |
+| 108 | 0xFFBF06 | 0x0001 | 0x11 | — | — | 0xFF |  |
+| 109 | 0xFFCF06 | 0x0001 | 0xFF | — | — | — |  |
+| 110 | 0xFFDF06 | 0x0001 | 0xFF | — | — | — |  |
+| 111 | 0xFFEF06 | 0x0001 | 0xFF | — | — | — |  |
+| 112 | 0xFFFF06 | 0x0001 | 0xFF | — | — | — |  |
+| 113 | 0xFF0F07 | 0x0001 | 0xFF | — | — | — |  |
+| 114 | 0xFF1F07 | 0x0001 | 0xFF | — | — | — |  |
+| 115 | 0xFF2F07 | 0x0001 | 0x1A | — | — | — |  |
+| 116 | 0xFF3F07 | 0x0001 | 0x18 | — | — | — |  |
+| 117 | 0xFF4F07 | 0x0001 | 0xFF | — | — | — |  |
+| 118 | 0xFF5F07 | 0x0001 | 0xFF | — | — | — |  |
+| 119 | 0xFF6F07 | 0x0001 | 0xFF | — | — | — |  |
+| 120 | 0xFF7F07 | 0x0001 | 0xFF | — | — | — |  |
+| 121 | 0xFF8F07 | 0x0001 | 0xFF | — | — | — |  |
+| 122 | 0xFF9F07 | 0x0001 | 0xFF | — | — | — |  |
+| 123 | 0xFFAF07 | 0x0001 | 0xFF | — | — | — |  |
+| 124 | 0xFFBF07 | 0x0001 | 0xFF | — | — | — |  |
+| 125 | 0xFFCF07 | 0x0001 | 0xFF | — | — | — |  |
+| 126 | 0xFFDF07 | 0x0001 | 0xFF | — | — | — |  |
+| 127 | 0xFFEF07 | 0x0001 | 0x5E | — | — | — |  |
+| 128 | 0xFFFF07 | 0x0001 | 0x6E | — | — | — |  |
+| 129 | 0xFF0F08 | 0x0001 | 0xFF | — | — | — |  |
+| 130 | 0xFF1F08 | 0x0001 | 0x56 | — | — | — |  |
+| 131 | 0xFF2F08 | 0x0001 | 0x60 | — | — | — |  |
+| 132 | 0xFF3F08 | 0x0001 | 0xFF | — | — | — |  |
+| 133 | 0xFF4F08 | 0x0001 | 0x3D | — | — | — |  |
+| 134 | 0xFF5F08 | 0x0001 | 0xFF | — | — | — |  |
+| 135 | 0xFF6F08 | 0x0001 | 0xFF | — | — | — |  |
+| 136 | 0xFF7F08 | 0x0001 | 0xFF | — | — | — |  |
+| 137 | 0xFF8F08 | 0x0001 | 0xFF | — | — | — |  |
+| 138 | 0xFF9F08 | 0x0001 | 0xFF | — | — | — |  |
+| 139 | 0xFFAF08 | 0x0001 | 0xFF | — | — | — |  |
+| 140 | 0xFFBF08 | 0x0001 | 0xFF | — | — | 0x11 |  |
+| 141 | 0xFFCF08 | 0x0001 | 0xFF | — | — | — |  |
+| 142 | 0xFFDF08 | 0x0001 | 0x0B | — | — | 0xFF |  |
+| 143 | 0xFFEF08 | 0x0001 | 0xFF | — | — | — |  |
+| 144 | 0xFFFF08 | 0x0001 | 0xFF | — | — | — |  |
+| 145 | 0xFF0F09 | 0x0001 | 0xFF | — | — | — |  |
+| 146 | 0xFF1F09 | 0x0001 | 0xFF | — | — | — |  |
+| 147 | 0xFF2F09 | 0x0001 | 0xFF | — | — | — |  |
+| 148 | 0xFF3F09 | 0x0001 | 0xFF | — | — | — |  |
+| 149 | 0xFF4F09 | 0x0001 | 0xFF | — | — | — |  |
+| 150 | 0xFF5F09 | 0x0001 | 0xFF | — | — | — |  |
+| 151 | 0xFF6F09 | 0x0001 | 0x6B | — | — | — |  |
+| 152 | 0xFF7F09 | 0x0001 | 0x01 | — | — | — |  |
+| 153 | 0xFF8F09 | 0x0001 | 0x7C | — | — | — |  |
+| 154 | 0xFF9F09 | 0x0001 | 0xFF | — | — | — |  |
+| 155 | 0xFFAF09 | 0x0001 | 0xFF | — | — | — |  |
+| 156 | 0xFFBF09 | 0x0001 | 0xFF | — | — | — |  |
+| 157 | 0xFFCF09 | 0x0001 | 0xFF | — | — | — |  |
+| 158 | 0xFFDF09 | 0x0001 | 0xFF | — | — | — |  |
+| 159 | 0xFFEF09 | 0x0001 | 0xFF | — | — | — |  |
+| 160 | 0xFFFF09 | 0x0001 | 0xFF | — | — | — |  |
+| 161 | 0xFF0F0A | 0x0001 | 0xFF | — | — | — |  |
+| 162 | 0xFF1F0A | 0x0001 | 0xFF | — | — | — |  |
+| 163 | 0xFF2F0A | 0x0001 | 0x23 | — | — | — |  |
+| 164 | 0xFF3F0A | 0x0001 | 0x00 | — | — | 0xFF |  |
+| 165 | 0xFF4F0A | 0x0001 | 0xFF | — | — | — |  |
+| 166 | 0xFF5F0A | 0x0001 | 0xFF | — | — | — |  |
+| 167 | 0xFF6F0A | 0x0001 | 0xFF | — | — | — |  |
+| 168 | 0xFF7F0A | 0x0001 | 0xFF | — | — | — |  |
+| 169 | 0xFF8F0A | 0x0001 | 0xFF | — | — | — |  |
+| 170 | 0xFF9F0A | 0x0001 | 0xFF | — | — | — |  |
+| 171 | 0xFFAF0A | 0x0001 | 0x12 | — | — | 0x41 |  |
+| 172 | 0xFFBF0A | 0x0001 | 0xFF | — | — | — |  |
+| 173 | 0xFFCF0A | 0x0001 | 0x51 | — | — | — |  |
+| 174 | 0xFFDF0A | 0x0001 | 0x1D | — | — | — |  |
+| 175 | 0xFFEF0A | 0x0001 | 0xFF | — | — | — |  |
+| 176 | 0xFFFF0A | 0x0001 | 0xFF | — | — | — |  |
+| 177 | 0xFF0F0B | 0x0001 | 0xFF | — | — | — |  |
+| 178 | 0xFF1F0B | 0x0001 | 0xFF | — | — | — |  |
+| 179 | 0xFF2F0B | 0x0001 | 0xFF | — | — | — |  |
+| 180 | 0xFF3F0B | 0x0001 | 0xFF | — | — | — |  |
+| 181 | 0xFF4F0B | 0x0001 | 0xFF | — | — | — |  |
+| 182 | 0xFF5F0B | 0x0001 | 0xFF | — | — | — |  |
+| 183 | 0xFF6F0B | 0x0001 | 0xFF | — | — | — |  |
+| 184 | 0xFF7F0B | 0x0001 | 0xFF | — | — | — |  |
+| 185 | 0xFF8F0B | 0x0001 | 0xFF | — | — | — |  |
+| 186 | 0xFF9F0B | 0x0001 | 0xFF | — | — | — |  |
+| 187 | 0xFFAF0B | 0x0001 | 0xFF | — | — | — |  |
+| 188 | 0xFFBF0B | 0x0001 | 0xFF | — | — | — |  |
+| 189 | 0xFFCF0B | 0x0001 | 0x69 | — | — | — | Settings → Radio Settings → Display Func → Display DIR (0xFF baseline; flips to 0x00 when display reversed, backlight adjusted, or LED indicator disabled, and persists across reboot) |
+| 190 | 0xFFDF0B | 0x0001 | 0xFF | — | — | — |  |
+| 191 | 0xFFEF0B | 0x0001 | 0xFF | — | — | — |  |
+| 192 | 0xFFFF0B | 0x0001 | 0xFF | — | — | — |  |
+| 193 | 0xFF0F0C | 0x0001 | 0xFF | — | — | — |  |
+| 194 | 0xFF1F0C | 0x0001 | 0xFF | — | — | — |  |
+| 195 | 0xFF2F0C | 0x0001 | 0xFF | — | — | 0x12 |  |
+| 196 | 0xFF3F0C | 0x0001 | 0x08 | — | — | — | Settings → Radio Settings → Display Func → Backlight Timeout / LED Indicator (1 min = 0xFF, 10 s = 0x04, LED Indicator Off = 0x00; values persist across reboot) |
+| 197 | 0xFF4F0C | 0x0001 | 0xFF | — | — | — |  |
+| 198 | 0xFF5F0C | 0x0001 | 0x4B | — | — | — |  |
+| 199 | 0xFF6F0C | 0x0001 | 0xFF | — | — | — |  |
+| 200 | 0xFF7F0C | 0x0001 | 0x00 | — | — | 0xFF |  |
+| 201 | 0xFF8F0C | 0x0001 | 0x0C | — | — | 0xFF |  |
 
-### 4. Order of observed 4 KiB reads
+### 4. Order of observed 4 KiB reads
 
 
-Actual order of 4 KiB reads observed in the dmrva capture (addresses within the same 0x1000 page may vary by a few bytes):
+All four OEM captures issue 77 random-access 4 KiB reads once the radio acknowledges PROGRAM mode. The factory, DMRVA, and GBFMcCall logs are byte-for-byte identical; the EricPlug log reorders nine of the fetches (highlighted below). Addresses are shown as the 24-bit big-endian offsets supplied in the `0x52` read headers. `—` indicates the EricPlug capture used the same address as the baseline.
 
-1. `52 00 a0 0a 00 10`  → 0x00A00A (Channel data, first page)
-2. `52 00 50 01 00 10`  → 0x005001 (Channel data, second page)
-3. `52 00 70 01 00 10`  → 0x007001 (Channel data, third page)
-4. `52 01 f0 ff 00 10`  → 0x01F0FF (padding/guard)
-5. `52 01 f0 ff 00 10`  → 0x01F0FF
-6. `52 01 f0 ff 00 10`  → 0x01F0FF
-7. `52 00 30 07 00 10`  → 0x003007
-8. `52 01 f0 ff 00 10`  → 0x01F0FF
-9. `52 00 20 07 00 10`  → 0x002007
-10. `52 01 f0 ff 00 10`  → 0x01F0FF
-11. `52 00 a0 02 00 10`  → 0x00A002
-12. `52 00 d0 0a 00 10`  → 0x00D00A
-13. `52 01 f0 ff 00 10`  → 0x01F0FF
-14. `52 00 00 02 00 10`  → 0x000002
-15. `52 00 20 00 00 10`  → 0x002000
-16. `52 01 f0 ff 00 10`  → 0x01F0FF
-17. `52 00 10 04 00 10`  → 0x001004
-18. `52 00 20 0a 00 10`  → 0x00200A
-19. `52 01 f0 ff 00 10`  → 0x01F0FF
-20. `52 01 f0 ff 00 10`  → 0x01F0FF
-21. `52 01 f0 ff 00 10`  → 0x01F0FF
-22. `52 01 f0 ff 00 10`  → 0x01F0FF
-23. `52 01 f0 ff 00 10`  → 0x01F0FF
-24. `52 01 f0 ff 00 10`  → 0x01F0FF
-25. `52 01 f0 ff 00 10`  → 0x01F0FF
-26. `52 01 f0 ff 00 10`  → 0x01F0FF
-27. `52 01 f0 ff 00 10`  → 0x01F0FF
-28. `52 01 f0 ff 00 10`  → 0x01F0FF
-29. `52 01 f0 ff 00 10`  → 0x01F0FF
-30. `52 00 d0 00 00 10`  → 0x00D000
-31. `52 00 b0 00 00 10`  → 0x00B000 (scanlists?)
-32. `52 00 50 03 00 10`  → 0x005003 (zones?)
-33. `52 00 a0 06 00 10`  → 0x00A006 (high entropy, no strings)
-34. `52 00 10 01 00 10`  → 0x001001 (encryption?)
-35. `52 00 60 03 00 10`  → 0x006003 (welcome message)
-36. `52 00 f0 00 00 10`  → 0x00F000
-37. `52 00 c0 00 00 10`  → 0x00C000 (emergency & alerts)
-38. `52 00 b0 06 00 10`  → 0x00B006 (scanlists)
-39. `52 00 80 01 00 10`  → 0x008001 (roam)
-40. `52 00 d0 01 00 10`  → 0x00D001 (roam continued)
-41. `52 00 90 00 00 10`  → 0x009000 (dmr id)
-42. `52 00 80 27 00 10`  → 0x008027 (contacts)
+| Step | Factory/DMRVA/GBF | EricPlug |
+| --- | --- | --- |
+| 01 | 0x00a00a | 0x00200c |
+| 02 | 0x005001 | — |
+| 03 | 0x007001 | — |
+| 04 | 0x01f0ff | 0x000001 |
+| 05 | 0x01f0ff | — |
+| 06 | 0x01f0ff | — |
+| 07 | 0x003007 | — |
+| 08 | 0x01f0ff | — |
+| 09 | 0x002007 | — |
+| 10 | 0x01f0ff | — |
+| 11 | 0x00a002 | — |
+| 12 | 0x00d00a | — |
+| 13 | 0x01f0ff | — |
+| 14 | 0x000002 | — |
+| 15 | 0x002000 | — |
+| 16 | 0x01f0ff | — |
+| 17 | 0x001004 | — |
+| 18 | 0x00200a | — |
+| 19 | 0x01f0ff | — |
+| 20 | 0x01f0ff | — |
+| 21 | 0x01f0ff | — |
+| 22 | 0x01f0ff | — |
+| 23 | 0x01f0ff | — |
+| 24 | 0x01f0ff | — |
+| 25 | 0x01f0ff | — |
+| 26 | 0x01f0ff | — |
+| 27 | 0x01f0ff | — |
+| 28 | 0x01f0ff | — |
+| 29 | 0x01f0ff | — |
+| 30 | 0x01f0ff | — |
+| 31 | 0x00d000 | — |
+| 32 | 0x009004 | — |
+| 33 | 0x00f003 | — |
+| 34 | 0x01f0ff | — |
+| 35 | 0x003000 | — |
+| 36 | 0x01f0ff | — |
+| 37 | 0x01f0ff | — |
+| 38 | 0x001003 | — |
+| 39 | 0x01f0ff | — |
+| 40 | 0x01f0ff | — |
+| 41 | 0x01f0ff | — |
+| 42 | 0x008002 | — |
+| 43 | 0x01f0ff | — |
+| 44 | 0x004008 | — |
+| 45 | 0x01f0ff | — |
+| 46 | 0x01f0ff | — |
+| 47 | 0x01f0ff | — |
+| 48 | 0x000001 | 0x00a00a |
+| 49 | 0x008000 | 0x002003 |
+| 50 | 0x00a000 | — |
+| 51 | 0x00b000 | 0x003002 |
+| 52 | 0x01f0ff | — |
+| 53 | 0x01f0ff | — |
+| 54 | 0x01f0ff | — |
+| 55 | 0x01f0ff | — |
+| 56 | 0x005003 | 0x004003 |
+| 57 | 0x003001 | — |
+| 58 | 0x00e007 | — |
+| 59 | 0x002002 | — |
+| 60 | 0x002008 | — |
+| 61 | 0x01f0ff | — |
+| 62 | 0x01f0ff | — |
+| 63 | 0x01f0ff | — |
+| 64 | 0x009006 | — |
+| 65 | 0x00a006 | — |
+| 66 | 0x001001 | — |
+| 67 | 0x006002 | 0x007003 |
+| 68 | 0x007000 | — |
+| 69 | 0x005000 | — |
+| 70 | 0x00d008 | 0x006002 |
+| 71 | 0x00f000 | — |
+| 72 | 0x00c000 | — |
+| 73 | 0x00b006 | 0x00b008 |
+| 74 | 0x008001 | — |
+| 75 | 0x00d001 | — |
+| 76 | 0x009000 | — |
+| 77 | 0x008027 | — |
 
-Note: The repeated `52 01 f0 ff 00 10` reads (0x01F0FF) are session padding/guard reads and may appear more or fewer times depending on the session, but the above order matches the dmrva capture.
+Notes:
+
+- The baseline sequence front-loads the 0x00A00A channel bank; EricPlug instead begins with 0x00200C (a slice of the parameter table) and delays the primary channel page until step 48.
+- 0x01F0FF appears 31 times in every capture; these reads are consistent guard/padding fetches interleaved between data-bearing pages.
+- When EricPlug diverges, it tends to pull nearby housekeeping tables earlier (e.g., 0x002003, 0x003002, 0x004003) and reorders two of the later housekeeping pages (0x006002, 0x00B008) relative to the other captures.
+- EricPlug’s first active channel is analog (`Mode`/`Type` bytes `0x04 0x84`), which leaves the header at 0x00A00A all zeros in that image; the CPS therefore falls back to the older 0x00200C analog bank to fetch channel slots before proceeding with the standard digital bank at 0x00A00A.
 
  
 
@@ -486,7 +524,7 @@ Guidance:
 - Treat these bytes as an option/status bitmap for CPS feature gating or display settings. They are not required to locate user data; prefer the dynamic V‑frame pointers for the memory map.
 - If you want to fingerprint a radio image or explain CPS behavior differences, record this matrix alongside V‑frame results.
 
-#### FFxx option probe matrix — results and artifacts
+#### FFxx option probe matrix results and artifacts
 
 - Full sweep (200-ish single‑byte probes) combined CSV:
   - `dm32_reference/exports/probes/ff_probe_matrix_combined.csv`
@@ -505,7 +543,7 @@ Summary of observed differences across the three captures:
 | FF:AF:03 | FF | 00 | FF |
 | FF:BF:03 | FF | 5C | FF |
 
-## component locations and markers
+## Component locations and markers
 
 Anchors verified against the new serial captures and cross‑checked with `factory.data` and CSVs:
 
@@ -540,7 +578,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - Channel slot structure
   - Verified: 0x30-byte records in the 0x00A00A page contain label, RX/TX BCD, and a 24-byte parameter block (mode, colour code, encryption, signalling). See `channel_layout.md` for byte-by-byte mapping and correlations to CPS exports.
 
-## expected image size
+## Expected image size
 
 - OEM CPS “factory codeplug” (`dm32_reference/code_plugs/factory.data`) is 659,456 bytes (0xA1000) with substantial 0xFF/0x00 fill and UI/message strings.
 - A read session fetches multiple 4 KiB pages and many 1‑byte `0xFFxx` probes, not a contiguous span.
@@ -550,7 +588,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - write a sparse file with only fetched pages at true addresses; or
   - serialize just structures of interest (channels, contacts, zones, etc.).
 
-## quick memory map (observed)
+## Quick memory map (observed)
 
 - 0x006000–0x006FFF: String-heavy label bank (channel/zone names mirrored for UI). Reads around 0x0060xx are common but no longer the authoritative slot source.
 - 0x00A00A–0x00AFFF: Primary channel slots (see `channel_layout.md`). Begins with count word and 0x30-byte records per channel.
@@ -559,7 +597,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - 0x00D000–0x00DFFF: Roam/label/UI strings vicinity (anchors vary by build; adjacent 0x00D00x often populated).
 - Additional pages around 0x000100–0x000F00, 0x002000–0x007000, and 0x00A000–0x00B000 hold parameter tables and references used by UI/CSV composition.
 
-## protocol “contract” summary
+## Protocol "contract" summary
 
 - Transport: UART (CH340), 115200 baud
 - Session:
@@ -573,7 +611,23 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - W (0x57) replies: 6‑byte echo header + payload
 - Error/timeout: short bursts of `06` and `FF` appear between frames; resync on `0x57`. 4 KiB reads complete in a handful of chunks.
 
-## cross‑reference: CSVs ↔ memory
+## References
+
+Analysis based on the latest capture logs:
+
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_dmrva_read.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_dmrva_write.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_read.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_factory_write.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_read.txt`
+- `dm32_reference/serial_captures/DM32_OEM_CPS/serial_capture_GBFMcCall_write.txt`
+
+and cross‑checked against the extracted content in:
+
+- `dm32_reference/exports/factory/` (CSV reference matching factory data)
+- `dm32_reference/exports/dmrva/` (CSV reference matching the dmrva data and captures)
+
+## Cross-reference: CSVs and memory
 
 - `exports/factory/factory_channels.csv`
   - Channels map to the 0x00A00A slot page (see `channel_layout.md` for record layout). Labels and parameters extracted from the 0x30-byte records match the CSV export exactly, including DX contacts, APRS flags, and analog signalling entries.
@@ -584,7 +638,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - `exports/factory/factory_zones.csv`
   - Zones/assignments correlate with labels near 0x0060xx/0x0080xx; composition references channel indices whose labels are co‑located.
 
-## examples (from capture)
+## Examples (from capture)
 
 - Read of a 4 KiB contacts/label page:
   - Host: `52 00 80 00 00 10` (R @ 0x008000 len 0x1000)
@@ -598,7 +652,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - Host: `52 00 D0 00 00 10` (R @ 0x00D000 len 0x1000)
   - Radio: `57 00 D0 00 00 10` + payload (mostly 0xFF in this capture excerpt); adjacent pages like `0x00D00A` often contain strings.
 
-## notes and next steps
+## Notes and next steps
 
 - Prefer the dynamic partition map provided by V‑frames over any static address table. These tuples are stable across captures and encode base, total segment size, and record size for robust readers.
 - Cross‑validate by matching implied capacities (segment_size/record_size) against exported CSV counts (e.g., zones used ≤ 128; talkgroups used ≤ ~451).
@@ -606,7 +660,7 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 - Tooling:
   - `tools/dm32_cps_emulator.py` — low‑level procedural host script that reproduces the CPS handshake, enumerates V‑frames, and can fetch pages directly from a connected DM‑32UV for validation.
 
-## V‑frame quick reference
+## V-frame quick reference
 
 
 | ID    | Typical len | Example payload (truncated)                  | One‑line semantic guess |

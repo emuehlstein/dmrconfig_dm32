@@ -1,4 +1,20 @@
+# Build outputs
 *.o
 *.hd
+*.dSYM/
 dmrconfig
-dmrconfig.exe
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Environment / tooling
+# Keep the .venv directory (empty) in version control
+# Do not ignore it; venv manager treats presence as target location
+.vscode/
+.DS_Store
+
+# Probe captures and other generated assets
+out/
+tools/out/
+dm32_reference/out/
