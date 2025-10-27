@@ -85,7 +85,7 @@ Observed IDs in these captures. The table shows the baseline payloads and highli
 | --- | --- | ---------------------- | --------- | ------------ | ----- |
 | 0x01 | 0x0E | `DM32.01.01.046` | — | `DM32.01.L01.048` | Firmware version string (ASCII). St Pete shows newer version with "L01" variant. |
 | 0x02 | 0x0C | `00 00 00 00 00 00 15 A4 00 00 15 A4` | — | — | Two identical 0x15A4 counters; likely capacity limits (TBD). |
-| 0x03 | 0x0A | `2022-06-27` | — | — | Firmware build date (ASCII). |
+| 0x03 | 0x0A | `2022-06-27` | — | — | hardware/bootloader? build date (ASCII). |
 | 0x04 | 0x0C | `D1.01.01.004` | — | — | D-module version string. |
 | 0x05 | 0x0C | `R1.00.01.001` | — | — | R-module version string. |
 | 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | Pointer tuple → 0x5000-byte segment, 38-byte records. |
