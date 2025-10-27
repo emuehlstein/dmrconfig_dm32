@@ -1,10 +1,12 @@
 # Baofeng DM‑32 channel memory layout (working notes)
+** needs to be updated with latest findings from read_connection **
 
 This document summarizes the current understanding of the DM‑32 channel slot structure as discovered from on‑radio reads and CSV validations. It focuses on read‑only decoding for safe tooling and will evolve as more samples arrive.
 
 ## Addressing and slot window
 
 - Primary channel records live in a 4 KiB page starting at address **0x00A00A**. The CPS always fetches this block first (`52 00 A0 0A 00 10`).
+- The OEM codeplug stores the same labels at offset `0x00021010`; subtracting `0x16FF6` aligns the codeplug offsets with the runtime addresses described here.
 - Additional channel banks appear to be reserved at 0x005001 and 0x007001. In the factory image they contain all zeros; treat them as future expansion banks.
 - Each page begins with a 16-byte header:
   - `0x0000–0x0003` — little-endian channel count (factory image: `0x0019` → 25 channels).

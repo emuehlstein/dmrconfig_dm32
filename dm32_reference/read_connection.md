@@ -88,16 +88,16 @@ Observed IDs in these captures. The table shows the baseline payloads and highli
 | 0x03 | 0x0A | `2022-06-27` | — | — | hardware/bootloader? build date (ASCII). |
 | 0x04 | 0x0C | `D1.01.01.004` | — | — | D-module version string. |
 | 0x05 | 0x0C | `R1.00.01.001` | — | — | R-module version string. |
-| 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | Pointer tuple → 0x5000-byte segment, 38-byte records. |
-| 0x07 | 0x08 | `addr=0x00900C mask=0x9FFF stride=0x0014` | — | — | Pointer tuple for secondary table. |
-| 0x08 | 0x08 | `addr=0x000018 mask=0x0FFF stride=0x0020` | — | — | Pointer tuple (records of size 0x20). |
-| 0x09 | 0x08 | `addr=0x00C06D mask=0xFFFF stride=0x00FF` | — | `addr=0x000000 mask=0x0000 stride=0x0000` | Pointer tuple; stride 0xFF suggests variable-length blob. St Pete shows null/disabled entry. |
-| 0x0A | 0x08 | `addr=0x001000 mask=0x8FFF stride=0x000C` | — | — | Pointer tuple into housekeeping region. |
+| 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | Pointer tuple → 20,480 bytes, 38-byte records, max 538 records. |
+| 0x07 | 0x08 | `addr=0x00900C mask=0x9FFF stride=0x0014` | — | — | Pointer tuple → 40,960 bytes, 20-byte records, max 2,048 records. |
+| 0x08 | 0x08 | `addr=0x000018 mask=0x0FFF stride=0x0020` | — | — | Pointer tuple → 4,096 bytes, 32-byte records, max 128 records. |
+| 0x09 | 0x08 | `addr=0x00C06D mask=0xFFFF stride=0x00FF` | — | `addr=0x000000 mask=0x0000 stride=0x0000` | Pointer tuple → 65,536 bytes, 255-byte records (variable blob). St Pete shows null/disabled entry. |
+| 0x0A | 0x08 | `addr=0x001000 mask=0x8FFF stride=0x000C` | — | — | Pointer tuple → 36,864 bytes, 12-byte records, max 3,072 records. |
 | 0x0B | 0x0C | `C1.00.01.001` | — | — | C-module version string. |
 | 0x0D | 0x40 | `034E2D00 ... 003F0000 ...` | — | — | 64-byte capabilities block emitted once when `56 00 00 40 0D` is sent. |
 | 0x0D | 0x00 | `0 bytes` | — | — | Normal poll reply after the handshake (empty). |
-| 0x0E | 0x08 | `addr=0x000015 mask=0x5FFF stride=0x0017` | — | — | Pointer tuple for ancillary table. |
-| 0x0F | 0x08 | `addr=0x008027 mask=0xBFFF stride=0x006D` | — | `addr=0x008027 mask=0xFFFF stride=0x00FF` | Pointer bundle CPS immediately dereferences. St Pete shows different mask/stride. |
+| 0x0E | 0x08 | `addr=0x000015 mask=0x5FFF stride=0x0017` | — | — | Pointer tuple → 24,576 bytes, 23-byte records, max 1,068 records. |
+| 0x0F | 0x08 | `addr=0x008027 mask=0xBFFF stride=0x006D` | — | `addr=0x008027 mask=0xFFFF stride=0x00FF` | Pointer tuple → 49,152/65,536 bytes, 109/255-byte records, max 451/variable. St Pete shows expanded contacts capacity. |
 | 0x10 | 0x03 | `50 C3 00` (value=0x00C350) | — | `F0 49 02` (value=0x0249F0) | Three-byte status/flag value. St Pete shows significantly different value. |
 
 - `0x0D` handshake payload details: treating the 64-byte blob as 16 little-endian 32-bit words leaves only two non-zero entries. Word 0 is `0x002D4E03` (raw bytes `03 4E 2D 00`, i.e., leading length byte 0x03 followed by the ASCII string `N-\0`); word 8 is `0x0000003F`, which looks like a 6-bit feature mask. The remaining fourteen words are zero across all captures examined so far.
@@ -571,7 +571,17 @@ Anchors verified against the new serial captures and cross‑checked with `facto
   - `id=0x08`: base `0x000018`, 4 KiB, 32‑byte records → capacity 128. Your exports (e.g., GBFMcCall/dmrva) show ≪128 zones used, which fits.
 
 - Channel slot page
-  - The CPS issues `52 00 A0 0A 00 10` immediately after entering PROGRAM mode. The returned 4 KiB block begins with a little-endian channel count (factory sample: 0x0019) followed by 0x30-byte channel records (label, RX/TX BCD, 24-byte parameter block). Full field mapping is captured in `dm32_reference/channel_layout.md`.
+  - The CPS issues `52 00 A0 0A 00 10` immediately after entering PROGRAM mode. This 4 KiB block is the primary digital channel storage.
+  - **Header format (16 bytes)**:
+    - Bytes 0x00-0x03: Little-endian channel count (e.g., factory: `0x19 00 00 00` = 25 channels, DMRVA: `0x80 00 00 00` = 128 channels)
+    - Bytes 0x04-0x0F: Currently all zeros (reserved/padding)
+  - **Channel records**: Starting at offset 0x10, fixed 0x30-byte (48-byte) slots
+    - Slot structure: 16-byte label + 4-byte RX freq (BCD) + 4-byte TX freq (BCD) + 24-byte parameter block
+    - Slot _n_ starts at `0x10 + n × 0x30`
+    - Full field mapping is captured in `dm32_reference/channel_layout.md`
+  - **Examples from captures**:
+    - Factory codeplug: Header starts `19 00 00 00` (25 channels)
+    - DMRVA codeplug: Header starts `80 00 00 00` (128 channels)
   - Additional channel banks at 0x005001 and 0x007001 are fetched in the same session but decode to all zeros in the factory codeplug; treat them as reserved capacity until populated samples appear.
 
 - Channel‑related tables (indices/memberships)
