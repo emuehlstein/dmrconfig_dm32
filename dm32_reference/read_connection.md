@@ -77,26 +77,28 @@ Use this section to track known V‑frame IDs, their payload shapes, and likely 
 
 - `56 <id> <len> <payload[len]>`
 
-Observed IDs in these captures (factory, DMRVA, GBFMcCall, and EricPlug all responded with the same bytes). The table highlights the baseline payloads and where differences would appear:
+Observed IDs across 6 captures showing firmware version differences and memory layout variations. The st_pete capture reveals a different firmware variant ("DM32.01.L01.048") with modified V-frame responses.
 
-| Id | Len | Factory | DMRVA | GBF | Eric | Eric_1012 | Notes |
-| --- | --- | ------- | ----- | --- | ---- | --------- | ----- |
-| 0x01 | 0x0E | `DM32.01.01.046` | — | — | — | — | Firmware version string (ASCII). |
-| 0x02 | 0x0C | `00 00 00 00 00 00 15 A4 00 00 15 A4` | — | — | — | — | Two identical 0x15A4 counters; likely capacity limits (TBD). |
-| 0x03 | 0x0A | `2022-06-27` | — | — | — | — | Firmware build date (ASCII). |
-| 0x04 | 0x0C | `D1.01.01.004` | — | — | — | — | D-module version string. |
-| 0x05 | 0x0C | `R1.00.01.001` | — | — | — | — | R-module version string. |
-| 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | — | — | Pointer tuple → 0x5000-byte segment, 38-byte records. |
-| 0x07 | 0x08 | `addr=0x00900C mask=0x9FFF stride=0x0014` | — | — | — | — | Pointer tuple for secondary table. |
-| 0x08 | 0x08 | `addr=0x000018 mask=0x0FFF stride=0x0020` | — | — | — | — | Pointer tuple (records of size 0x20). |
-| 0x09 | 0x08 | `addr=0x00C06D mask=0xFFFF stride=0x00FF` | — | — | — | — | Pointer tuple; stride 0xFF suggests variable-length blob. |
-| 0x0A | 0x08 | `addr=0x001000 mask=0x8FFF stride=0x000C` | — | — | — | — | Pointer tuple into housekeeping region. |
-| 0x0B | 0x0C | `C1.00.01.001` | — | — | — | — | C-module version string. |
-| 0x0D | 0x40 | `034E2D00 ... 003F0000 ...` | — | — | — | — | 64-byte capabilities block emitted once when `56 00 00 40 0D` is sent. |
-| 0x0D | 0x00 | `0 bytes` | — | — | — | — | Normal poll reply after the handshake (empty). |
-| 0x0E | 0x08 | `addr=0x000015 mask=0x5FFF stride=0x0017` | — | — | — | — | Pointer tuple for ancillary table. |
-| 0x0F | 0x08 | `addr=0x008027 mask=0xBFFF stride=0x006D` | — | — | — | — | Pointer bundle CPS immediately dereferences with `R (0x52)`. |
-| 0x10 | 0x03 | `50 C3 00` | — | — | — | — | Three-byte status/flag value (purpose TBD). |
+Observed IDs in these captures. The table shows the baseline payloads and highlights differences across captures:
+
+| Id | Len | Factory/DMRVA/GBF/Eric | Eric_1012 | St Pete ANSI | Notes |
+| --- | --- | ---------------------- | --------- | ------------ | ----- |
+| 0x01 | 0x0E | `DM32.01.01.046` | — | `DM32.01.L01.048` | Firmware version string (ASCII). St Pete shows newer version with "L01" variant. |
+| 0x02 | 0x0C | `00 00 00 00 00 00 15 A4 00 00 15 A4` | — | — | Two identical 0x15A4 counters; likely capacity limits (TBD). |
+| 0x03 | 0x0A | `2022-06-27` | — | — | Firmware build date (ASCII). |
+| 0x04 | 0x0C | `D1.01.01.004` | — | — | D-module version string. |
+| 0x05 | 0x0C | `R1.00.01.001` | — | — | R-module version string. |
+| 0x06 | 0x08 | `addr=0x001020 mask=0x4FFF stride=0x0026` | — | — | Pointer tuple → 0x5000-byte segment, 38-byte records. |
+| 0x07 | 0x08 | `addr=0x00900C mask=0x9FFF stride=0x0014` | — | — | Pointer tuple for secondary table. |
+| 0x08 | 0x08 | `addr=0x000018 mask=0x0FFF stride=0x0020` | — | — | Pointer tuple (records of size 0x20). |
+| 0x09 | 0x08 | `addr=0x00C06D mask=0xFFFF stride=0x00FF` | — | `addr=0x000000 mask=0x0000 stride=0x0000` | Pointer tuple; stride 0xFF suggests variable-length blob. St Pete shows null/disabled entry. |
+| 0x0A | 0x08 | `addr=0x001000 mask=0x8FFF stride=0x000C` | — | — | Pointer tuple into housekeeping region. |
+| 0x0B | 0x0C | `C1.00.01.001` | — | — | C-module version string. |
+| 0x0D | 0x40 | `034E2D00 ... 003F0000 ...` | — | — | 64-byte capabilities block emitted once when `56 00 00 40 0D` is sent. |
+| 0x0D | 0x00 | `0 bytes` | — | — | Normal poll reply after the handshake (empty). |
+| 0x0E | 0x08 | `addr=0x000015 mask=0x5FFF stride=0x0017` | — | — | Pointer tuple for ancillary table. |
+| 0x0F | 0x08 | `addr=0x008027 mask=0xBFFF stride=0x006D` | — | `addr=0x008027 mask=0xFFFF stride=0x00FF` | Pointer bundle CPS immediately dereferences. St Pete shows different mask/stride. |
+| 0x10 | 0x03 | `50 C3 00` (value=0x00C350) | — | `F0 49 02` (value=0x0249F0) | Three-byte status/flag value. St Pete shows significantly different value. |
 
 - `0x0D` handshake payload details: treating the 64-byte blob as 16 little-endian 32-bit words leaves only two non-zero entries. Word 0 is `0x002D4E03` (raw bytes `03 4E 2D 00`, i.e., leading length byte 0x03 followed by the ASCII string `N-\0`); word 8 is `0x0000003F`, which looks like a 6-bit feature mask. The remaining fourteen words are zero across all captures examined so far.
 - Practical takeaway: the host appears to use this block as a coarse capability gate — the CPS never re-requests it after the initial probe, and it does not change between codeplugs.
@@ -146,8 +148,12 @@ Observed stable tuples across all three captures. For each id: base, segment siz
 
 Notes:
 
-- All numbers are identical in `serial_capture_dmrva_read.txt`, `serial_capture_factory_read.txt`, and `serial_capture_GBFMcCall_read.txt`.
+- Most numbers are identical across factory, DMRVA, GBFMcCall, EricPlug, and EricPlug_20251012 captures.
+- **St Pete ANSI capture differences**:
+  - **ID 0x09**: Returns null entry (`addr=0x000000 mask=0x0000 stride=0x0000`) instead of the standard 0x00C06D blob pointer, suggesting this firmware variant disables or relocates the emergency/encryption/messages blob.
+  - **ID 0x0F**: Shows different mask/stride (`mask=0xFFFF stride=0x00FF` vs standard `mask=0xBFFF stride=0x006D`), indicating a different contact/talkgroup storage format or capacity.
 - The 0x0F tuple is corroborated by CPS: it immediately probes `52 00 80 27 04 00` and receives `… 01 00 00 00`.
+- These V-frame differences suggest the st_pete capture represents a different firmware variant (possibly "L01") with modified memory layout.
 
 ### 3. Resource fetch (optional)
 
@@ -411,97 +417,105 @@ Before the 4 KiB transfers begin, the CPS performs a fixed sweep of 201 single
 | 200 | 0xFF7F0C | 0x0001 | 0x00 | — | — | 0xFF | 0xFF |  |
 | 201 | 0xFF8F0C | 0x0001 | 0x0C | — | — | 0xFF | 0xFF |  |
 
-### 4. Order of observed 4 KiB reads
+  ### 4. Order of observed 4 KiB reads
 
+**All** OEM captures issue 77 random-access 4 KiB reads once the radio acknowledges PROGRAM mode. Current analysis of 6 captures shows several distinct patterns:
 
-All five OEM captures issue 77 random-access 4 KiB reads once the radio acknowledges PROGRAM mode. The factory, DMRVA, and GBFMcCall logs are byte-for-byte identical; the EricPlug and Eric_1012 logs reorder nine of the fetches (highlighted below). Addresses are shown as the 24-bit big-endian offsets supplied in the `0x52` read headers. `—` indicates that capture used the same address as the baseline.
+- **Factory/DMRVA/GBFMcCall**: Identical sequence (baseline pattern)
+- **EricPlug**: Differs at steps 1, 48, 56, 67, 70, 73
+- **EricPlug_20251012**: Differs at steps 1, 4-6, 48, 56, 67, 73
+- **st_pete_20251026_ansi**: Completely different pattern with no 0x01F0FF guard pages
+- **st_pete_20251026_unicode**: Incomplete capture (0 requests)
 
-| Step | Factory/DMRVA/GBF | EricPlug | Eric_1012 |
-| --- | --- | --- | --- |
-| 01 | 0x00a00a | 0x00200c | 0x00e008 |
-| 02 | 0x005001 | — | — |
-| 03 | 0x007001 | — | — |
-| 04 | 0x01f0ff | 0x000001 | 0x000001 |
-| 05 | 0x01f0ff | — | — |
-| 06 | 0x01f0ff | — | — |
-| 07 | 0x003007 | — | — |
-| 08 | 0x01f0ff | — | — |
-| 09 | 0x002007 | — | — |
-| 10 | 0x01f0ff | — | — |
-| 11 | 0x00a002 | — | — |
-| 12 | 0x00d00a | — | — |
-| 13 | 0x01f0ff | — | — |
-| 14 | 0x000002 | — | — |
-| 15 | 0x002000 | — | — |
-| 16 | 0x01f0ff | — | — |
-| 17 | 0x001004 | — | — |
-| 18 | 0x00200a | — | — |
-| 19 | 0x01f0ff | — | — |
-| 20 | 0x01f0ff | — | — |
-| 21 | 0x01f0ff | — | — |
-| 22 | 0x01f0ff | — | — |
-| 23 | 0x01f0ff | — | — |
-| 24 | 0x01f0ff | — | — |
-| 25 | 0x01f0ff | — | — |
-| 26 | 0x01f0ff | — | — |
-| 27 | 0x01f0ff | — | — |
-| 28 | 0x01f0ff | — | — |
-| 29 | 0x01f0ff | — | — |
-| 30 | 0x01f0ff | — | — |
-| 31 | 0x00d000 | — | — |
-| 32 | 0x009004 | — | — |
-| 33 | 0x00f003 | — | — |
-| 34 | 0x01f0ff | — | — |
-| 35 | 0x003000 | — | — |
-| 36 | 0x01f0ff | — | — |
-| 37 | 0x01f0ff | — | — |
-| 38 | 0x001003 | — | — |
-| 39 | 0x01f0ff | — | — |
-| 40 | 0x01f0ff | — | — |
-| 41 | 0x01f0ff | — | — |
-| 42 | 0x008002 | — | — |
-| 43 | 0x01f0ff | — | — |
-| 44 | 0x004008 | — | — |
-| 45 | 0x01f0ff | — | — |
-| 46 | 0x01f0ff | — | — |
-| 47 | 0x01f0ff | — | — |
-| 48 | 0x000001 | 0x00a00a | 0x008004 |
-| 49 | 0x008000 | 0x002003 | 0x002003 |
-| 50 | 0x00a000 | — | — |
-| 51 | 0x00b000 | 0x003002 | 0x003002 |
-| 52 | 0x01f0ff | — | — |
-| 53 | 0x01f0ff | — | — |
-| 54 | 0x01f0ff | — | — |
-| 55 | 0x01f0ff | — | — |
-| 56 | 0x005003 | 0x004003 | 0x008000 |
-| 57 | 0x003001 | — | — |
-| 58 | 0x00e007 | — | — |
-| 59 | 0x002002 | — | — |
-| 60 | 0x002008 | — | — |
-| 61 | 0x01f0ff | — | — |
-| 62 | 0x01f0ff | — | — |
-| 63 | 0x01f0ff | — | — |
-| 64 | 0x009006 | — | — |
-| 65 | 0x00a006 | — | — |
-| 66 | 0x001001 | — | — |
-| 67 | 0x006002 | 0x007003 | 0x007004 |
-| 68 | 0x007000 | — | — |
-| 69 | 0x005000 | — | — |
-| 70 | 0x00d008 | 0x006002 | 0x006002 |
-| 71 | 0x00f000 | — | — |
-| 72 | 0x00c000 | — | — |
-| 73 | 0x00b006 | 0x00b008 | 0x009002 |
-| 74 | 0x008001 | — | — |
-| 75 | 0x00d001 | — | — |
-| 76 | 0x009000 | — | — |
-| 77 | 0x008027 | — | — |
+Addresses are shown as the 24-bit big-endian offsets supplied in the `0x52` read headers. `—` indicates that capture used the same address as the baseline.
+
+| Step | Factory/DMRVA/GBF | EricPlug | Eric_1012 | St Pete ANSI |
+| --- | --- | --- | --- | --- |
+| 01 | 0x00a00a | 0x00200c | 0x00e008 | 0x008006 |
+| 02 | 0x005001 | — | — | 0x00c007 |
+| 03 | 0x007001 | — | — | — |
+| 04 | 0x01f0ff | 0x000001 | 0x000001 | 0x000001 |
+| 05 | 0x01f0ff | — | — | 0x008000 |
+| 06 | 0x01f0ff | — | — | 0x00b000 |
+| 07 | 0x003007 | — | — | — |
+| 08 | 0x01f0ff | — | — | 0x00e000 |
+| 09 | 0x002007 | — | — | — |
+| 10 | 0x01f0ff | — | — | 0x004001 |
+| 11 | 0x00a002 | — | — | — |
+| 12 | 0x00d00a | — | — | — |
+| 13 | 0x01f0ff | — | — | 0x007002 |
+| 14 | 0x000002 | — | — | — |
+| 15 | 0x002000 | — | — | — |
+| 16 | 0x01f0ff | — | — | 0x009002 |
+| 17 | 0x001004 | — | — | — |
+| 18 | 0x00200a | — | — | — |
+| 19 | 0x01f0ff | — | — | 0x00b002 |
+| 20 | 0x01f0ff | — | — | 0x00c002 |
+| 21 | 0x01f0ff | — | — | 0x00d002 |
+| 22 | 0x01f0ff | — | — | 0x00e002 |
+| 23 | 0x01f0ff | — | — | 0x00f002 |
+| 24 | 0x01f0ff | — | — | 0x000003 |
+| 25 | 0x01f0ff | — | — | 0x003003 |
+| 26 | 0x01f0ff | — | — | 0x004003 |
+| 27 | 0x01f0ff | — | — | 0x005003 |
+| 28 | 0x01f0ff | — | — | 0x006003 |
+| 29 | 0x01f0ff | — | — | 0x007003 |
+| 30 | 0x01f0ff | — | — | 0x008003 |
+| 31 | 0x00d000 | — | — | — |
+| 32 | 0x009004 | — | — | — |
+| 33 | 0x00f003 | — | — | — |
+| 34 | 0x01f0ff | — | — | 0x00a003 |
+| 35 | 0x003000 | — | — | — |
+| 36 | 0x01f0ff | — | — | 0x00b003 |
+| 37 | 0x01f0ff | — | — | 0x00c003 |
+| 38 | 0x001003 | — | — | — |
+| 39 | 0x01f0ff | — | — | 0x00d003 |
+| 40 | 0x01f0ff | — | — | 0x00e003 |
+| 41 | 0x01f0ff | — | — | 0x000004 |
+| 42 | 0x008002 | — | — | — |
+| 43 | 0x01f0ff | — | — | 0x002004 |
+| 44 | 0x004008 | — | — | — |
+| 45 | 0x01f0ff | — | — | 0x003004 |
+| 46 | 0x01f0ff | — | — | 0x004004 |
+| 47 | 0x01f0ff | — | — | 0x005004 |
+| 48 | 0x000001 | 0x00a00a | 0x008004 | 0x006008 |
+| 49 | 0x008000 | 0x002003 | 0x002003 | — |
+| 50 | 0x00a000 | — | — | — |
+| 51 | 0x00b000 | 0x003002 | 0x003002 | — |
+| 52 | 0x01f0ff | — | — | 0x006004 |
+| 53 | 0x01f0ff | — | — | 0x007004 |
+| 54 | 0x01f0ff | — | — | 0x008004 |
+| 55 | 0x01f0ff | — | — | 0x00a004 |
+| 56 | 0x005003 | 0x004003 | 0x008000 | 0x008008 |
+| 57 | 0x003001 | — | — | — |
+| 58 | 0x00e007 | — | — | — |
+| 59 | 0x002002 | — | — | — |
+| 60 | 0x002008 | — | — | — |
+| 61 | 0x01f0ff | — | — | 0x00b004 |
+| 62 | 0x01f0ff | — | — | 0x00c004 |
+| 63 | 0x01f0ff | — | — | 0x00e004 |
+| 64 | 0x009006 | — | — | — |
+| 65 | 0x00a006 | — | — | — |
+| 66 | 0x001001 | — | — | — |
+| 67 | 0x006002 | 0x007003 | 0x007004 | 0x007008 |
+| 68 | 0x007000 | — | — | — |
+| 69 | 0x005000 | — | — | — |
+| 70 | 0x00d008 | 0x006002 | 0x006002 | — |
+| 71 | 0x00f000 | — | — | — |
+| 72 | 0x00c000 | — | — | — |
+| 73 | 0x00b006 | 0x00b008 | 0x009002 | 0x007005 |
+| 74 | 0x008001 | — | — | — |
+| 75 | 0x00d001 | — | — | — |
+| 76 | 0x009000 | — | — | — |
+| 77 | 0x008027 | — | — | — |
 
 Notes:
 
-- The baseline sequence front-loads the 0x00A00A channel bank; EricPlug instead begins with 0x00200C, while Eric_1012 opens with 0x00E008 and does not approach 0x00A00A until step 48 (where it momentarily grabs 0x008004 before settling back into line).
-- 0x01F0FF appears 31 times in every capture; these reads are consistent guard/padding fetches interleaved between data-bearing pages.
-- When the Eric captures diverge, they pull nearby housekeeping tables forward (e.g., 0x002003, 0x003002, 0x004003 in 2023). The 2025 trace also promotes 0x008000, 0x007004, and 0x009002 before rejoining the baseline cadence.
-- Both Eric traces defer the primary digital channel bank, so the CPS services legacy/housekeeping pages first and only resumes the standard sweep once it reaches step 48.
+- The baseline sequence front-loads the 0x00A00A channel bank; EricPlug instead begins with 0x00200C, while Eric_1012 opens with 0x00E008.
+- The st_pete capture shows a radically different pattern with no 0x01F0FF guard/padding reads, instead accessing data pages sequentially (e.g., 0x00b002, 0x00c002, 0x00d002 in steps 19-21).
+- 0x01F0FF appears 31 times in the baseline pattern; these are consistent guard/padding fetches interleaved between data-bearing pages, but completely absent from st_pete.
+- When the Eric captures diverge, they pull nearby housekeeping tables forward (e.g., 0x002003, 0x003002, 0x004003). The 2025 trace also promotes 0x008000, 0x007004, and 0x009002 before rejoining the baseline cadence.
+- The st_pete pattern suggests a more efficient CPS implementation that skips padding reads and accesses memory regions in a more systematic pattern.
 
 
 - Request shape: `52 FF <mid> <page> 01 00`
@@ -579,9 +593,9 @@ Anchors verified against the new serial captures and cross‑checked with `facto
 
 ## Expected image size
 
-- OEM CPS “factory codeplug” (`dm32_reference/code_plugs/factory.data`) is 659,456 bytes (0xA1000) with substantial 0xFF/0x00 fill and UI/message strings.
-- A read session fetches multiple 4 KiB pages and many 1‑byte `0xFFxx` probes, not a contiguous span.
-- `device.img` typically ends at 0x200FF when including `0x01F0FF`. Omitting that guard page reduces size without losing user data.
+- OEM CPS “factory codeplug” (`dm32_reference/code_plugs/factory.data`) is 659,456 bytes (0x0A1000) with substantial 0xFF/0x00 fill and UI/message strings.
+- Assembling the OEM captures with `assemble_serial_reads.py` produces 16,776,972-byte images because the CPS issues many single-byte probes up to `0xFFxxxx`; despite the large extent, only 86 bytes above 0x0A1000 differ from `0xFF`, so the useful payload lives in the first 0x0A1000 region.
+- Treat the `0xFFxxxx` tail as sparse housekeeping. Trimming the assembled image back to 0x0A1000 exactly matches the codeplug footprint while preserving every non-`0xFF` byte observed in the read logs.
 - Write sessions captured in `serial_capture_*_write.txt` rewrite the entire 0xA1000 image in aligned 4 KiB blocks rather than issuing minimal deltas.
 - For a compact logical image:
   - write a sparse file with only fetched pages at true addresses; or
