@@ -134,26 +134,30 @@ Validation tips:
 
 #### Dynamic partition map (decoded from V-frames)
 
-Observed stable tuples across all three captures. For each id: base, segment size (bytes and KiB), record size (bytes), and an implied maximum record count when fixed.
+Observed tuples across 6 captures. For each id: base, segment size (bytes and KiB), record size (bytes), and an implied maximum record count when fixed. The st_pete capture reveals significant differences in the L01 firmware variant.
 
 | ID   | Base     | Segment size | Size (KiB) | Record size | Implied max | Notes |
 |------|----------|--------------|------------|-------------|-------------|-------|
 | 0x06 | 0x001020 | 20479+1      | 20 KiB     | 38          | ≈ 538       | Index/table; dump contains RIFF/WAVE markers → likely audio resource index |
-| 0x07 | 0x00900C | 40959+1      | 40 KiB     | 20          | 2048        | compact per‑item table |
-| 0x08 | 0x000018 | 4095+1       | 4 KiB      | 32          | 128         | likely Zones |
-| 0x09 | 0x00C06D | 65535+1      | 64 KiB     | 255         | —           | blob/variable (emergency/encrypt/messages vicinity) |
+| 0x07 | 0x00900C | 40959+1      | 40 KiB     | 20          | 2048        | Compact per‑item table |
+| 0x08 | 0x000018 | 4095+1       | 4 KiB      | 32          | 128         | Zones (likely) |
+| 0x09 | 0x00C06D | 65535+1      | 64 KiB     | 255         | —           | Emergency/recording blob (**DISABLED in L01 firmware**) |
 | 0x0A | 0x001000 | 36863+1      | 36 KiB     | 12          | 3072        | Compact per‑item table; changes with CPS programming (canned messages/text) |
-| 0x0E | 0x000015 | 24575+1      | 24 KiB     | 23          | ≈ 1068      | index/list (e.g., memberships) |
-| 0x0F | 0x008027 | 49151+1      | 48 KiB     | 109         | ≈ 451       | Contacts/Talkgroups index/head |
+| 0x0E | 0x000015 | 24575+1      | 24 KiB     | 23          | ≈ 1068      | Index/list (e.g., memberships) |
+| 0x0F | 0x008027 | 49151+1/65535+1 | 48/64 KiB | 109/255   | ≈ 451/—     | Contacts/Talkgroups. **L01 firmware: expanded to 64 KiB for 150K contact capacity** |
 
 Notes:
 
 - Most numbers are identical across factory, DMRVA, GBFMcCall, EricPlug, and EricPlug_20251012 captures.
-- **St Pete ANSI capture differences**:
-  - **ID 0x09**: Returns null entry (`addr=0x000000 mask=0x0000 stride=0x0000`) instead of the standard 0x00C06D blob pointer, suggesting this firmware variant disables or relocates the emergency/encryption/messages blob.
-  - **ID 0x0F**: Shows different mask/stride (`mask=0xFFFF stride=0x00FF` vs standard `mask=0xBFFF stride=0x006D`), indicating a different contact/talkgroup storage format or capacity.
+- **St Pete ANSI capture differences (DM32.01.L01.048 firmware)**:
+  - **ID 0x09**: Returns null entry (`addr=0x000000 mask=0x0000 stride=0x0000`) instead of the standard 0x00C06D blob pointer, indicating the emergency/recording features have been completely removed to free up 64 KiB of memory.
+  - **ID 0x0F**: Shows expanded contacts segment (`mask=0xFFFF stride=0x00FF` vs standard `mask=0xBFFF stride=0x006D`), indicating the contacts storage has been expanded from 48 KiB to 64 KiB to support the advertised "150K Contacts" capacity.
 - The 0x0F tuple is corroborated by CPS: it immediately probes `52 00 80 27 04 00` and receives `… 01 00 00 00`.
-- These V-frame differences suggest the st_pete capture represents a different firmware variant (possibly "L01") with modified memory layout.
+- **Firmware variant DM32.01.L01.048**: According to the latest firmware documentation, this version "Expands to 150K Contacts, removes recording", which is directly reflected in the V-frame data:
+  - Contacts segment expanded from 48 KiB (mask=0xBFFF) to 64 KiB (mask=0xFFFF) - a 33% capacity increase moving toward the 150K target
+  - Recording/emergency blob completely disabled (ID 0x09 returns null entry)
+  - This represents a direct memory trade-off: 64 KiB freed from recording features, 16 KiB added to contacts, with 48 KiB net savings for other uses
+- These V-frame differences demonstrate how firmware variants can modify memory layout while maintaining protocol compatibility.
 
 ### 3. Resource fetch (optional)
 
@@ -425,7 +429,6 @@ Before the 4 KiB transfers begin, the CPS performs a fixed sweep of 201 single
 - **EricPlug**: Differs at steps 1, 48, 56, 67, 70, 73
 - **EricPlug_20251012**: Differs at steps 1, 4-6, 48, 56, 67, 73
 - **st_pete_20251026_ansi**: Completely different pattern with no 0x01F0FF guard pages
-- **st_pete_20251026_unicode**: Incomplete capture (0 requests)
 
 Addresses are shown as the 24-bit big-endian offsets supplied in the `0x52` read headers. `—` indicates that capture used the same address as the baseline.
 
