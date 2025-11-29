@@ -1,0 +1,9 @@
+No.,Scan Name,CTC Scan Mode,Scan Tx Mode,Hang Time,Priority Channel 1,Priority Channel 2,Designed Channel,Priority Sweep Time,Talkback,Channel Members
+1,Family SL,Detection CTC,Current Channel,3.0,None,None,F1 All,1100,1,F1 All|F2 Team A|F3 Team B|F4 Team C|F5 Road|F6 RPTR|F8 Evnstn 725|F9 PrkRdg 675|F10 Evnst 700|F11 Nrthbrk |F13 UHF Call|F14 NS9RC UHF|F15 CMFC UHF|
+2,CL DMR SL,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,CL Loop TS2|CL Smbg TS1|CL Smbg TS2|
+3,HamRptrs SL,Detection CTC,Current Channel,3.0,None,None,F13 UHF Call,500,0,F14 NS9RC UHF|F15 CMFC UHF|CL Loop TS1|CL Loop TS2|CL Smbg TS1|CL Smbg TS2|F13 UHF Call|SARA UHF|SARA VHF|
+4,GMRSRptrs ,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,F8 Evnstn 725|F9 PrkRdg 675|F10 Evnst 700|F11 Nrthbrk |
+5,GMRSSplx SL,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,GMRS17 600|GMRS18 625|GMRS19 650|GMRS20 675|GMRS21 700|GMRS15 550 |
+6,Hotspot SL,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,Hotspot TS2|
+7,Lake House,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,Hotspot TS2|GMRS15 550 |GMRS16 575|GMRS17 600|GMRS18 625|GMRS19 650|GMRS20 675|GMRS21 700|Hotspot TS1|F13 UHF Call|F5 Road|
+8,ScanList 1,Detection CTC,Current Channel,3.0,None,None,F1 All,500,0,F1 All|

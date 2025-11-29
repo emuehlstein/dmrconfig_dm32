@@ -1,0 +1,9 @@
+No.,Name,Alarm Type,Alarm Mode,Revert Channel,Retransmission,HOT MIC Duration,Emergency Calls Number,Rx Duration Time,Auto Emergency Call
+1,DEmer 1,Only Whistle,Emergency Call,Select,5,10,1,10,0
+2,DEmer 2,Normal,Emergency Call,Select,5,10,1,10,0
+3,DEmer 3,Secret,Emergency Call,Select,5,10,3,10,1
+4,DEmer 4,Secret With Voice,Emergency Alarm,Select,5,10,1,10,0
+5,DEmer 5,Alarm Whistle,Emergency Call,Select,5,10,1,10,0
+6,DEmer 6,Normal,Alarm Call,Select,5,10,1,10,0
+7,DEmer 7,Secret With Voice,Emergency Call,Select,5,10,1,10,0
+8,DEmer 8,None,Emergency Call,Select,5,10,1,10,0
