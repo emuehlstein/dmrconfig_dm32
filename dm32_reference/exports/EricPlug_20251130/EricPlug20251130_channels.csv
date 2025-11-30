@@ -1,0 +1,33 @@
+No.,Channel Name,Channel Type,RX Frequency[MHz],TX Frequency[MHz],Power,Band Width,Scan List,TX Admit,Emergency System,Squelch Level,APRS Report Type,Forbid TX,APRS Receive,Forbid Talkaround,Auto Scan,Lone Work,Emergency Indicator,Emergency ACK,Analog APRS PTT Mode,Digital APRS PTT Mode,TX Contact,RX Group List,Color Code,Time Slot,Encryption,Encryption ID,APRS Report Channel,Direct Dual Mode,Private Confirm,Short Data Confirm,DMR ID,CTC/DCS Decode,CTC/DCS Encode,Scramble,RX Squelch Mode,Signaling Type,PTT ID,VOX Function,PTT ID Display
+1,F1 All,Analog,462.57500,462.57500,High,25KHz,Family SL,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,CL1 RXG,1,Slot 1,0,None,1,0,0,0,KC9MHE Eric,D023N,D023N,None,Carrier/CTC,None,OFF,0,0
+2,F2 Team A,Analog,462.60000,462.60000,High,25KHz,None,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,D023N,D023N,None,Carrier/CTC,None,OFF,0,0
+3,F3 Team B,Analog,462.62500,462.62500,High,25KHz,Family SL,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,D023N,D023N,None,Carrier/CTC,None,OFF,0,0
+4,F4 Team C,Analog,462.65000,462.65000,High,25KHz,None,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,D023N,D023N,None,Carrier/CTC,None,OFF,0,0
+5,F5 Road,Analog,462.67500,462.67500,High,25KHz,Family SL,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,141.3,141.3,None,Carrier/CTC,None,OFF,0,0
+6,F6 RPTR,Analog,462.55000,467.55000,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,D023N,D023N,None,Carrier/CTC,None,OFF,0,0
+7,F8 Evnstn 725,Analog,462.72500,467.75000,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,100.0,100.0,None,Carrier/CTC,None,OFF,0,0
+8,F9 PrkRdg 675,Analog,462.67500,467.67500,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,141.3,141.3,None,Carrier/CTC,None,OFF,0,0
+9,F10 Evnst 700,Analog,462.70000,462.70000,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,107.2,107.2,None,Carrier/CTC,None,OFF,0,0
+10,F11 Nrthbrk ,Analog,462.65000,460.65000,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,107.2,107.2,None,Carrier/CTC,None,OFF,0,0
+11,F13 UHF Call,Analog,446.00000,446.00000,High,25KHz,Family SL,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+12,F14 NS9RC UHF,Analog,442.72500,447.72500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,114.8,114.8,None,Carrier/CTC,None,OFF,0,0
+13,F15 CMFC UHF,Analog,443.75000,448.75000,High,25KHz,HamRptrs SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,114.8,114.8,None,Carrier/CTC,None,OFF,0,0
+14,CL Loop TS1,Digital,442.97500,447.97500,High,12.5KHz,None,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,Local 1,CL1 RXG,4,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+15,CL Loop TS2,Digital,442.97500,447.97500,High,12.5KHz,CL DMR SL,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,Local 2,CL2 RXG,4,Slot 2,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+16,CL Smbg TS1,Digital,443.06875,448.06875,High,12.5KHz,CL DMR SL,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,CL1 RXG,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+17,CL Smbg TS2,Digital,443.06875,448.06875,High,12.5KHz,CL DMR SL,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,Local 2,CL2 RXG,0,Slot 2,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+18,SARA VHF,Analog,146.88000,146.28000,High,25KHz,HamRptrs SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,107.2,107.2,None,Carrier/CTC,None,OFF,0,0
+19,SARA UHF,Analog,444.37500,449.37500,High,25KHz,HamRptrs SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,114.8,114.8,None,Carrier/CTC,None,OFF,0,0
+20,GMRS15 550 ,Analog,462.55000,462.55000,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+21,GMRS16 575,Analog,462.57500,462.57500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+22,GMRS17 600,Analog,462.60000,462.60000,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+23,GMRS18 625,Analog,462.62500,462.62500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+24,GMRS19 650,Analog,462.65000,462.65000,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+25,GMRS20 675,Analog,462.67500,462.67500,High,25KHz,None,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+26,GMRS21 700,Analog,462.70000,462.70000,High,25KHz,Family SL,Allow TX,None,3,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+27,Hotspot TS1,Digital,430.43750,439.43750,High,12.5KHz,None,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,parrot,None,1,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+28,Hotspot TS2,Digital,430.43750,439.43750,High,12.5KHz,None,Always,None,3,Digital,0,0,0,0,0,0,0,0,0,parrot,None,1,Slot 2,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+29,DMR Simp A,Digital,446.50000,446.50000,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Local 99,None,1,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+30,DMR Simp B,Digital,446.07500,446.07500,High,12.5KHz,None,Always,None,3,Off,0,0,0,0,0,0,0,0,0,Local 99,None,1,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+31,KC9CLV HS,Digital,448.12500,443.12500,High,12.5KHz,HamRptrs SL,Always,None,3,Off,0,0,0,0,0,0,0,0,0,parrot,None,1,Slot 1,0,None,2,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
+32,MRN 16,Analog,156.80000,156.80000,High,12.5KHz,None,Allow TX,None,2,Off,0,0,0,0,0,0,0,0,0,Local 1,None,0,Slot 1,0,None,1,0,0,0,KC9MHE Eric,None,None,None,Carrier/CTC,None,OFF,0,0
