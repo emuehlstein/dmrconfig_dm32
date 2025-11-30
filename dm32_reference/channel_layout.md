@@ -5,10 +5,8 @@ This document summarizes the current understanding of the DM‑32 channel slot s
 
 ## Addressing and slot window
 
-- Primary channel records live in a 4 KiB page starting at address **0x00A00A**. The CPS always fetches this block first (`52 00 A0 0A 00 10`).
-- The OEM codeplug stores the same labels at offset `0x00021010`; subtracting `0x16FF6` aligns the codeplug offsets with the runtime addresses described here.
-- Additional channel banks appear to be reserved at 0x005001 and 0x007001. In the factory image they contain all zeros; treat them as future expansion banks.
-- Each page begins with a 16-byte header:
+- Primary channel records live in a 4 KiB page starting at address determined by the v-frames earlier in the CPS process. 
+- Each channel page begins with a 16-byte header:
   - `0x0000–0x0003` — little-endian channel count (factory image: `0x0019` → 25 channels).
   - `0x0004–0x000F` — currently all zeros.
 - Starting at offset `0x0010`, the page is a linear array of fixed-size channel slots.
@@ -29,11 +27,27 @@ There is no variable padding: the label always consumes the first 16 bytes and t
 
 ## Frequency encoding
 
-- RX frequency: 4-byte little-endian BCD at 0x10..0x13.
-- TX frequency: 4-byte little-endian BCD at 0x14..0x17.
-- Each nibble is a decimal digit; interpret the bytes as a little-endian integer whose least-significant digit is in bits 3..0 of byte 0. The resulting integer is measured in 10 Hz units (divide by 100 000 to obtain MHz).
-- TX and RX use the same encoding. Factory data shows them equal for simplex channels; repeaters use different TX values, matching the CSV export.
-- The values are trustworthy; no secondary float representation is required.
+**ACTUAL IMPLEMENTATION BASED ON V-FRAME DISCOVERY:**
+
+- Channel records are 48-byte (0x30) structures starting at v-frame discovered address
+- Channel names are at offset +0x1B from record start (null-terminated ASCII)
+- RX frequency: 4 bytes at offset +0x1C from record start
+- TX frequency: 4 bytes at offset +0x20 from record start
+
+**Frequency Format:**
+
+- Each frequency is 4 bytes stored in **reverse byte order** (big-endian-like for BCD)  
+- Each byte contains 2 BCD nibbles (4-bit decimal digits)
+- Example: bytes `[0x75, 0x25, 0x46, 0x00]` -> reverse to `[0x00, 0x46, 0x25, 0x75]` -> nibbles `[0,0,4,6,2,5,7,5]` -> "00462575" -> 462.575 MHz
+- TX frequencies may have 0x04 in the last byte instead of 0x00, creating extra leading digits that must be stripped (e.g., "04462575" -> "462575")
+- Final value represents frequency in kHz; divide by 1000 to get MHz
+- For simplex channels, TX equals RX; for repeaters, TX may differ from RX
+
+**Validation:**
+
+- All 32 channel names match CSV export exactly
+- All frequencies decode correctly using this BCD reverse-byte method
+- Factory data shows simplex channels with TX = RX, repeater channels with appropriate offsets
 
 ## Parameter block
 
