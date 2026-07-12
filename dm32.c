@@ -407,6 +407,63 @@ static int dm32_read_block_retry(uint32_t addr24, uint16_t len, int attempts)
     return -1;
 }
 
+/*
+ * Read a single byte at addr24 without storing it into radio_mem. Used by the
+ * write path to probe the radio's current block layout while leaving the image
+ * that is staged in radio_mem untouched. Returns the byte, or -1 on error.
+ */
+static int dm32_read_byte_raw(uint32_t addr24)
+{
+    unsigned char cmd[6], hdr[6], val;
+
+    cmd[0] = 0x52;
+    cmd[1] = addr24 & 0xFF;          /* little-endian address */
+    cmd[2] = (addr24 >> 8) & 0xFF;
+    cmd[3] = (addr24 >> 16) & 0xFF;
+    cmd[4] = 0x01;
+    cmd[5] = 0x00;
+    if (serial_write(cmd, 6) < 0) {
+        return -1;
+    }
+    if (dm32_read_header_sync(hdr, 4000) != 0) {
+        return -1;
+    }
+    if (dm32_read_exact(&val, 1, 2000) != 1) {
+        return -1;
+    }
+    return val;
+}
+
+/*
+ * Write a 4 KiB block: 0x57 + addr(3, little-endian) + len(0x1000, little-
+ * endian) + 4096 data bytes. The last data byte (offset 0xFFF) is the block's
+ * type marker. The radio replies with a single 0x06 ACK.
+ */
+static int dm32_write_block(uint32_t addr24, const unsigned char *data)
+{
+    unsigned char cmd[6 + DM32_PAGE_SIZE];
+    unsigned char ack = 0;
+
+    cmd[0] = 0x57;
+    cmd[1] = addr24 & 0xFF;
+    cmd[2] = (addr24 >> 8) & 0xFF;
+    cmd[3] = (addr24 >> 16) & 0xFF;
+    cmd[4] = 0x00;
+    cmd[5] = 0x10;                   /* length 0x1000 (4096) */
+    memcpy(cmd + 6, data, DM32_PAGE_SIZE);
+
+    if (trace_flag) {
+        fprintf(stderr, "DM32: W 0x%06X len 4096\n", addr24);
+    }
+    if (serial_write(cmd, (int)sizeof(cmd)) < 0) {
+        return -1;
+    }
+    if (dm32_read_exact(&ack, 1, 5000) != 1 || ack != 0x06) {
+        return -1;
+    }
+    return 0;
+}
+
 static int dm32_read_v_frame(uint8_t *type, uint8_t *length, unsigned char *payload, int maxlen, int timeout_msec)
 {
     unsigned char b;
@@ -1159,18 +1216,111 @@ static void dm32_upload(radio_device_t *radio, int cont_flag)
 {
     (void)radio;
     (void)cont_flag;
-    fprintf(stderr, "DM32: writing is not implemented yet.\n");
-    exit(-1);
+
+    fprintf(stderr,
+        "\nDM32: write support is EXPERIMENTAL and has NOT been verified on\n"
+        "      hardware. Make sure you have a backup image (dmrconfig -r)\n"
+        "      before continuing.\n");
+
+    if (serial_open_found(DM32_BAUD) < 0) {
+        fprintf(stderr, "DM32: unable to open serial port at %d\n", DM32_BAUD);
+        return;
+    }
+
+    dm32_board_id[0] = '\0';
+    dm32_nvsegs = 0;
+    dm32_main_start = DM32_MAIN_START;
+    dm32_main_end = DM32_MAIN_END;
+    radio_progress = 0;
+
+    (void)serial_pulse_rts_dtr();
+    usleep(150000);
+
+    fprintf(stderr, "DM32: handshake...\n");
+    dm32_collect_handshake_info();
+
+    fprintf(stderr, "DM32: entering PROGRAM mode...\n");
+    dm32_enter_program_mode();
+
+    /*
+     * Probe the radio's current block layout (type marker at block+0xFFF),
+     * as the OEM CPS does before writing. Build a type -> address map without
+     * disturbing the image staged in radio_mem.
+     */
+    uint32_t type_addr[256];
+    memset(type_addr, 0, sizeof(type_addr));
+    uint32_t start = dm32_page_base(dm32_main_start);
+    uint32_t end = dm32_main_end;
+    for (uint32_t addr = start;
+         addr <= end && addr + DM32_PAGE_SIZE <= MEMSZ;
+         addr += DM32_PAGE_SIZE) {
+        int t = dm32_read_byte_raw(addr + DM32_META_OFFSET);
+        if (t <= 0 || t == 0xFF) {
+            continue;
+        }
+        if (type_addr[t] == 0) {
+            type_addr[t] = addr;
+        }
+    }
+
+    unsigned total = 0;
+    for (unsigned t = 0x02; t <= 0x67; ++t) {
+        if (type_addr[t]) {
+            ++total;
+        }
+    }
+    if (total == 0) {
+        fprintf(stderr, "DM32: no writable blocks discovered; aborting.\n");
+        return;
+    }
+
+    /*
+     * Write each discovered block back to its address, ordered by block type.
+     * The staged image (from a prior dmrconfig -r of this radio) holds each
+     * block at the same address the radio currently uses.
+     */
+    fprintf(stderr, "DM32: writing %u blocks...\n", total);
+    unsigned done = 0;
+    for (unsigned t = 0x02; t <= 0x67; ++t) {
+        uint32_t addr = type_addr[t];
+        if (!addr) {
+            continue;
+        }
+        const unsigned char *data = dm32_mem_ptr(addr, DM32_PAGE_SIZE);
+        if (!data) {
+            continue;
+        }
+        if (dm32_write_block(addr, data) != 0) {
+            fprintf(stderr, "DM32: write failed at 0x%06X (type 0x%02X)\n",
+                    addr, t);
+            return;
+        }
+        ++done;
+        radio_progress = (int)(done * 100 / total);
+        usleep(20000);      /* 20 ms between block writes */
+    }
+
+    /* Leave programming mode. */
+    static const unsigned char end_cmd[] = {
+        0xFF, 0xFF, 0xFF, 0xFF, 0x0C, 'E', 'N', 'D', 0x00, 0x00, 0x00, 0x00
+    };
+    serial_write(end_cmd, sizeof(end_cmd));
+    dm32_collect_reads(NULL, 0, 200);
+    radio_progress = 100;
 }
 
 static int dm32_is_compatible(radio_device_t *radio)
 {
     (void)radio;
+    /* Some images carry the firmware string at offset 0x30. */
     const unsigned char *fw_ptr = dm32_mem_ptr(OFFSET_FW_VERSION, 4);
-    if (!fw_ptr) {
-        return 0;
+    if (fw_ptr && fw_ptr[0] == 'D' && fw_ptr[1] == 'M' &&
+        fw_ptr[2] == '3' && fw_ptr[3] == '2') {
+        return 1;
     }
-    return fw_ptr[0] == 'D' && fw_ptr[1] == 'M' && fw_ptr[2] == '3' && fw_ptr[3] == '2';
+    /* Otherwise accept the image if it contains DM-32 channel blocks. */
+    dm32_classify();
+    return dm32_chan_nblocks > 0;
 }
 
 static void dm32_read_image(radio_device_t *radio, FILE *img)
