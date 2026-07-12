@@ -900,7 +900,7 @@ again:
 
 void serial_read_region(int addr, unsigned char *data, int nbytes)
 {
-    static const int DATASZ = 64;
+    enum { DATASZ = 64 };
     unsigned char cmd[6], reply[8 + DATASZ];
     int n, i, retry = 0;
 
@@ -986,7 +986,7 @@ again_n:
 void serial_write_region(int addr, unsigned char *data, int nbytes)
 {
     //static const int DATASZ = 64;
-    static const int DATASZ = 16;
+    enum { DATASZ = 16 };
     unsigned char ack, cmd[8 + DATASZ];
     int n, i;
 

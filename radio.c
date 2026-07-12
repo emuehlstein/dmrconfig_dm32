@@ -268,6 +268,10 @@ void radio_read_image(const char *filename)
         }
         fseek(img, 0, SEEK_SET);
         break;
+    case 659456:        // Baofeng DM-32UV OEM codeplug (0x0A1000)
+    case 2097152:       // Baofeng DM-32UV full image (dmrconfig -r)
+        device = &radio_dm32;
+        break;
     default:
         fprintf(stderr, "%s: Unrecognized file size %u bytes.\n",
             filename, (int) st.st_size);
