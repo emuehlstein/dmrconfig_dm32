@@ -137,6 +137,19 @@ static uint32_t dm32_scan_block;
 static uint32_t dm32_rxgroup_block;
 static uint32_t dm32_radioid_block;
 static uint32_t dm32_msg_block;
+static uint32_t dm32_tg_block;        /* talkgroups (metadata 0x44)        */
+static uint32_t dm32_txc_lo_block;    /* TX contact, channels 1-2048 (0x42)*/
+static uint32_t dm32_txc_hi_block;    /* TX contact, channels 2049+ (0x43) */
+
+#define DM32_MAX_TG 256
+typedef struct {
+    char     name[17];
+    uint32_t number;
+    uint8_t  call_type;
+} dm32_tg_t;
+static dm32_tg_t dm32_tgs[DM32_MAX_TG];
+static unsigned  dm32_ntgs;
+static int       dm32_tgs_parsed;
 
 static uint32_t dm32_read_addrs[256];
 static unsigned dm32_read_addrs_n;
@@ -555,6 +568,11 @@ static void dm32_classify(void)
     dm32_rxgroup_block = 0;
     dm32_radioid_block = 0;
     dm32_msg_block = 0;
+    dm32_tg_block = 0;
+    dm32_txc_lo_block = 0;
+    dm32_txc_hi_block = 0;
+    dm32_ntgs = 0;
+    dm32_tgs_parsed = 0;
 
     uint32_t start = dm32_page_base(dm32_main_start);
     uint32_t end = dm32_main_end;
@@ -592,6 +610,12 @@ static void dm32_classify(void)
             dm32_radioid_block = addr;
         } else if (type == DM32_META_MSG && !dm32_msg_block) {
             dm32_msg_block = addr;
+        } else if (type == DM32_META_TG_FIRST && !dm32_tg_block) {
+            dm32_tg_block = addr;
+        } else if (type == DM32_META_TXCONTACT_LO && !dm32_txc_lo_block) {
+            dm32_txc_lo_block = addr;
+        } else if (type == DM32_META_TXCONTACT_HI && !dm32_txc_hi_block) {
+            dm32_txc_hi_block = addr;
         }
     }
 }
@@ -634,6 +658,15 @@ static void dm32_read_discovered(void)
     if (dm32_msg_block) {
         dm32_read_block_retry(dm32_msg_block, DM32_PAGE_SIZE, 2);
     }
+    if (dm32_tg_block) {
+        dm32_read_block_retry(dm32_tg_block, DM32_PAGE_SIZE, 2);
+    }
+    if (dm32_txc_lo_block) {
+        dm32_read_block_retry(dm32_txc_lo_block, DM32_PAGE_SIZE, 2);
+    }
+    if (dm32_txc_hi_block) {
+        dm32_read_block_retry(dm32_txc_hi_block, DM32_PAGE_SIZE, 2);
+    }
 }
 
 static int dm32_channel_blank(const channel_raw_t *ch)
@@ -653,6 +686,93 @@ static int dm32_channel_blank(const channel_raw_t *ch)
         return 1;
     }
     return raw[0] == 0x00 || raw[0] == 0xFF;
+}
+
+/*
+ * Parse the talkgroup list (metadata block 0x44). Entry 1 begins with a
+ * 1-byte header (0x00); every entry is then flag(1) + name(16) + null(1) +
+ * number(3 LE) + call_type(1) + pad(2) = 24 bytes.
+ */
+static void dm32_parse_talkgroups(void)
+{
+    dm32_ntgs = 0;
+    dm32_tgs_parsed = 1;
+
+    const unsigned char *b = dm32_tg_block
+        ? dm32_mem_ptr(dm32_tg_block, DM32_PAGE_SIZE) : NULL;
+    if (!b) {
+        return;
+    }
+
+    unsigned off = 1;   /* skip entry-1 header byte */
+    while (dm32_ntgs < DM32_MAX_TG) {
+        unsigned name_off = off + 1;    /* skip flag byte */
+        if (name_off + 23 > DM32_PAGE_SIZE) {
+            break;
+        }
+        if (b[name_off] == 0x00 || b[name_off] == 0xFF) {
+            break;      /* end sentinel */
+        }
+        dm32_tg_t *tg = &dm32_tgs[dm32_ntgs];
+        dm32_copy_ascii(tg->name, sizeof(tg->name), b + name_off, 16);
+        const unsigned char *c = b + name_off + 16 + 1;   /* after name+null */
+        tg->number = c[0] | ((uint32_t)c[1] << 8) | ((uint32_t)c[2] << 16);
+        tg->call_type = c[3];
+        ++dm32_ntgs;
+        off += 24;
+    }
+}
+
+/* Resolve a channel's TX talkgroup name via blocks 0x42/0x43; NULL if none. */
+static const char *dm32_channel_contact(unsigned ch_index)
+{
+    const unsigned char *blk;
+    unsigned off;
+
+    if (ch_index >= 1 && ch_index <= 2048 && dm32_txc_lo_block) {
+        blk = dm32_mem_ptr(dm32_txc_lo_block, DM32_PAGE_SIZE);
+        off = (ch_index - 1) * 2;
+    } else if (ch_index > 2048 && dm32_txc_hi_block) {
+        blk = dm32_mem_ptr(dm32_txc_hi_block, DM32_PAGE_SIZE);
+        off = (ch_index & 0x7FF) * 2;
+    } else {
+        return NULL;
+    }
+    if (!blk || off + 1 >= DM32_PAGE_SIZE) {
+        return NULL;
+    }
+    /* 12-bit talkgroup index: (byte0>>4)<<8 | byte1; 0 = none. */
+    unsigned tg = (((blk[off] >> 4) & 0x0F) << 8) | blk[off + 1];
+    if (tg == 0) {
+        return NULL;
+    }
+    if (!dm32_tgs_parsed) {
+        dm32_parse_talkgroups();
+    }
+    if (tg >= 1 && tg <= dm32_ntgs) {
+        return dm32_tgs[tg - 1].name;
+    }
+    return NULL;
+}
+
+static void dm32_print_talkgroups(FILE *out)
+{
+    if (!dm32_tgs_parsed) {
+        dm32_parse_talkgroups();
+    }
+    fprintf(out, "\nTalkgroups\n");
+    fprintf(out, "Idx  %-16s %-10s Type\n", "Name", "DMR ID");
+    if (dm32_ntgs == 0) {
+        fprintf(out, "(none)\n");
+        return;
+    }
+    for (unsigned i = 0; i < dm32_ntgs; ++i) {
+        const char *ct = dm32_tgs[i].call_type == 0x03 ? "Private" :
+                         dm32_tgs[i].call_type == 0x04 ? "Group" :
+                         dm32_tgs[i].call_type == 0x05 ? "All" : "?";
+        fprintf(out, "%4u  %-16s %-10u %s\n",
+                i + 1, dm32_tgs[i].name, dm32_tgs[i].number, ct);
+    }
 }
 
 static void dm32_format_tone(const uint8_t *t, char *buf, size_t n)
@@ -679,8 +799,8 @@ static void dm32_print_channels(FILE *out)
     static const char *power_name[] = { "Low", "Mid", "High", "High" };
 
     fprintf(out, "\nChannels\n");
-    fprintf(out, "Idx  %-16s %-10s %-10s Md Pwr  TS CC Tone   Scan\n",
-            "Name", "RX (MHz)", "TX (MHz)");
+    fprintf(out, "Idx  %-16s %-10s %-10s Md Pwr  TS CC Tone   %-14s Scan\n",
+            "Name", "RX (MHz)", "TX (MHz)", "Contact");
 
     if (dm32_chan_nblocks == 0) {
         fprintf(out, "(no channel blocks discovered)\n");
@@ -739,10 +859,12 @@ static void dm32_print_channels(FILE *out)
                 dm32_format_tone(ch->rx_tone, tone, sizeof(tone));
             }
 
-            fprintf(out, "%4u  %-16s %10.5f %10.5f  %c  %-4s %-2s %-2s %-6s %s\n",
+            const char *contact = digital ? dm32_channel_contact(index) : NULL;
+            fprintf(out, "%4u  %-16s %10.5f %10.5f  %c  %-4s %-2s %-2s %-6s %-14s %s\n",
                     index, name, rx, tx,
                     digital ? 'D' : 'A',
                     power_name[power & 3], ts, cc, tone,
+                    contact ? contact : "-",
                     scan ? "yes" : "-");
             ++shown;
         }
@@ -984,6 +1106,7 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
     }
 
     dm32_print_radioids(out);
+    dm32_print_talkgroups(out);
     dm32_print_zones(out);
     dm32_print_scanlists(out);
     dm32_print_channels(out);
