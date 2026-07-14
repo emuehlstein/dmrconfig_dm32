@@ -1032,7 +1032,7 @@ static void dm32_print_zones(FILE *out)
 static void dm32_print_scanlists(FILE *out)
 {
     fprintf(out, "\nScan Lists\n");
-    fprintf(out, "Idx  Name\n");
+    fprintf(out, "Idx  %-11s PCh1 PCh2 Channels\n", "Name");
 
     if (!dm32_scan_block) {
         fprintf(out, "(none)\n");
@@ -1055,7 +1055,44 @@ static void dm32_print_scanlists(FILE *out)
         if (!name[0]) {
             continue;
         }
-        fprintf(out, "%4u  %s\n", n, name);
+
+        /*
+         * 57-byte entry layout (little-endian):
+         *   0x0B channel count; 0x0E priority types (bits3-0 pri1, bits7-4 pri2);
+         *   0x0F-10 priority channel 1 (stored directly);
+         *   0x13-14 priority channel 2 (stored = actual-2);
+         *   0x1A.. up to 15 member channels (u16 LE, 0/0xFFFF terminates).
+         */
+        unsigned pri_types = s[0x0E];
+        unsigned pri1_type = pri_types & 0x0F;
+        unsigned pri2_type = (pri_types >> 4) & 0x0F;
+        char pch1[5], pch2[5];
+        if (pri1_type == 2) {
+            unsigned c = s[0x0F] | ((unsigned)s[0x10] << 8);
+            snprintf(pch1, sizeof(pch1), "%u", c);
+        } else {
+            snprintf(pch1, sizeof(pch1), "%s", pri1_type == 1 ? "Cur" : "-");
+        }
+        if (pri2_type == 2) {
+            unsigned c = (s[0x13] | ((unsigned)s[0x14] << 8)) + 2;
+            snprintf(pch2, sizeof(pch2), "%u", c);
+        } else {
+            snprintf(pch2, sizeof(pch2), "%s", pri2_type == 1 ? "Cur" : "-");
+        }
+
+        unsigned cnt = s[0x0B];
+        if (cnt > 15) {
+            cnt = 15;
+        }
+        fprintf(out, "%4u  %-11s %-4s %-4s ", n, name, pch1, pch2);
+        for (unsigned i = 0; i < cnt; ++i) {
+            unsigned ch = s[0x1A + i * 2] | ((unsigned)s[0x1B + i * 2] << 8);
+            if (ch == 0 || ch == 0xFFFF) {
+                break;
+            }
+            fprintf(out, "%s%u", i ? "," : "", ch);
+        }
+        fprintf(out, "\n");
         ++shown;
     }
 
