@@ -408,9 +408,27 @@ static int dm32_read_block_retry(uint32_t addr24, uint16_t len, int attempts)
 }
 
 /*
+ * Drain any pending input so a probe reply cannot be confused with a stale or
+ * lagging reply left over from a previous request.
+ */
+static void dm32_drain_input(void)
+{
+    unsigned char sink[256];
+    while (serial_read(sink, (int)sizeof(sink), 0) > 0) {
+        /* discard */
+    }
+}
+
+/*
  * Read a single byte at addr24 without storing it into radio_mem. Used by the
  * write path to probe the radio's current block layout while leaving the image
  * that is staged in radio_mem untouched. Returns the byte, or -1 on error.
+ *
+ * The reply header (0x57 + addr(3 LE) + len(2 LE)) is validated to echo the
+ * exact address and length we requested. A stale or mismatched reply is
+ * resynchronised by consuming its payload, so its data bytes cannot be misread
+ * as the next reply. Without this, rapid sequential probing could attribute a
+ * marker to the wrong address and relocate blocks on write.
  */
 static int dm32_read_byte_raw(uint32_t addr24)
 {
@@ -422,16 +440,38 @@ static int dm32_read_byte_raw(uint32_t addr24)
     cmd[3] = (addr24 >> 16) & 0xFF;
     cmd[4] = 0x01;
     cmd[5] = 0x00;
-    if (serial_write(cmd, 6) < 0) {
-        return -1;
+
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        dm32_drain_input();
+        if (serial_write(cmd, 6) < 0) {
+            return -1;
+        }
+
+        for (int scan = 0; scan < 8; ++scan) {
+            if (dm32_read_header_sync(hdr, 1000) != 0) {
+                break;                   /* nothing came back; resend */
+            }
+            unsigned rlen = (unsigned)hdr[4] | ((unsigned)hdr[5] << 8);
+            if (hdr[1] == cmd[1] && hdr[2] == cmd[2] && hdr[3] == cmd[3] &&
+                hdr[4] == cmd[4] && hdr[5] == cmd[5]) {
+                if (dm32_read_exact(&val, 1, 2000) != 1) {
+                    return -1;
+                }
+                return val;
+            }
+            /* Wrong reply: consume its echoed payload length to resynchronise. */
+            while (rlen > 0) {
+                unsigned char sink[512];
+                int chunk = rlen > sizeof(sink) ? (int)sizeof(sink) : (int)rlen;
+                int got = dm32_read_exact(sink, chunk, 2000);
+                if (got <= 0) {
+                    break;
+                }
+                rlen -= (unsigned)got;
+            }
+        }
     }
-    if (dm32_read_header_sync(hdr, 4000) != 0) {
-        return -1;
-    }
-    if (dm32_read_exact(&val, 1, 2000) != 1) {
-        return -1;
-    }
-    return val;
+    return -1;
 }
 
 /*
@@ -898,6 +938,12 @@ static void dm32_print_channels(FILE *out)
 
             double rx = dm32_bcd_mhz(ch->rx_bcd);
             double tx = dm32_bcd_mhz(ch->tx_bcd);
+            /* Receive-only channels (e.g. aviation) store an all-0xFF TX
+             * frequency; display TX = RX rather than a bogus decoded value. */
+            if (ch->tx_bcd[0] == 0xFF && ch->tx_bcd[1] == 0xFF &&
+                ch->tx_bcd[2] == 0xFF && ch->tx_bcd[3] == 0xFF) {
+                tx = rx;
+            }
             unsigned mode = (ch->mode_flags & DM32_MODE_MASK) >> DM32_MODE_SHIFT;
             unsigned power = (ch->mode_flags & DM32_POWER_MASK) >> DM32_POWER_SHIFT;
             int digital = (mode & 1);   /* 0=Analog,1=Digital,2=FixAna,3=FixDig */
@@ -1243,12 +1289,12 @@ static void dm32_upload(radio_device_t *radio, int cont_flag)
     dm32_enter_program_mode();
 
     /*
-     * Probe the radio's current block layout (type marker at block+0xFFF),
-     * as the OEM CPS does before writing. Build a type -> address map without
+     * Build a type -> address map for the radio's CURRENT layout by probing the
+     * type marker at block+0xFFF (as the OEM CPS does before writing), without
      * disturbing the image staged in radio_mem.
      */
-    uint32_t type_addr[256];
-    memset(type_addr, 0, sizeof(type_addr));
+    uint32_t radio_addr[256];
+    memset(radio_addr, 0, sizeof(radio_addr));
     uint32_t start = dm32_page_base(dm32_main_start);
     uint32_t end = dm32_main_end;
     for (uint32_t addr = start;
@@ -1258,14 +1304,36 @@ static void dm32_upload(radio_device_t *radio, int cont_flag)
         if (t <= 0 || t == 0xFF) {
             continue;
         }
-        if (type_addr[t] == 0) {
-            type_addr[t] = addr;
+        if (radio_addr[t] == 0) {
+            radio_addr[t] = addr;
+        }
+    }
+
+    /*
+     * Build a type -> address map for the staged IMAGE by scanning its own
+     * block markers. The image is the source of truth for a restore: each
+     * block's content is written to whatever address the radio currently uses
+     * for that type. This updates blocks in place and never relocates them
+     * (relocation previously reset the 0x04 radio-settings block that holds the
+     * display language).
+     */
+    uint32_t image_addr[256];
+    memset(image_addr, 0, sizeof(image_addr));
+    for (uint32_t addr = start;
+         addr <= end && addr + DM32_PAGE_SIZE <= MEMSZ;
+         addr += DM32_PAGE_SIZE) {
+        unsigned char t = radio_mem[addr + DM32_META_OFFSET];
+        if (t == DM32_META_EMPTY || t == DM32_META_INVALID) {
+            continue;
+        }
+        if (image_addr[t] == 0) {
+            image_addr[t] = addr;
         }
     }
 
     unsigned total = 0;
     for (unsigned t = 0x02; t <= 0x67; ++t) {
-        if (type_addr[t]) {
+        if (radio_addr[t] && image_addr[t]) {
             ++total;
         }
     }
@@ -1275,24 +1343,24 @@ static void dm32_upload(radio_device_t *radio, int cont_flag)
     }
 
     /*
-     * Write each discovered block back to its address, ordered by block type.
-     * The staged image (from a prior dmrconfig -r of this radio) holds each
-     * block at the same address the radio currently uses.
+     * Write each block type's image content to the radio's current address for
+     * that type, ordered by block type.
      */
     fprintf(stderr, "DM32: writing %u blocks...\n", total);
     unsigned done = 0;
     for (unsigned t = 0x02; t <= 0x67; ++t) {
-        uint32_t addr = type_addr[t];
-        if (!addr) {
+        uint32_t raddr = radio_addr[t];
+        uint32_t iaddr = image_addr[t];
+        if (!raddr || !iaddr) {
             continue;
         }
-        const unsigned char *data = dm32_mem_ptr(addr, DM32_PAGE_SIZE);
+        const unsigned char *data = dm32_mem_ptr(iaddr, DM32_PAGE_SIZE);
         if (!data) {
             continue;
         }
-        if (dm32_write_block(addr, data) != 0) {
+        if (dm32_write_block(raddr, data) != 0) {
             fprintf(stderr, "DM32: write failed at 0x%06X (type 0x%02X)\n",
-                    addr, t);
+                    raddr, t);
             return;
         }
         ++done;
