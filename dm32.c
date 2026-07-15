@@ -1858,6 +1858,19 @@ static unsigned char *dm32_scanlist_wptr(unsigned number)
     return &radio_mem[dm32_scan_block + off];
 }
 
+/* Writable pointer to RX group entry `number` (1-based). */
+static unsigned char *dm32_rxgroup_wptr(unsigned number)
+{
+    if (!dm32_rxgroup_block || number == 0 || number > DM32_RXGROUP_MAX_GROUPS) {
+        return NULL;
+    }
+    uint32_t off = DM32_RXGROUP_HDR + (number - 1) * DM32_RXGROUP_ENTRY_SIZE;
+    if (off + DM32_RXGROUP_ENTRY_SIZE > DM32_PAGE_SIZE) {
+        return NULL;
+    }
+    return &radio_mem[dm32_rxgroup_block + off];
+}
+
 /* Pointer to the 16-byte name field of talkgroup `number` (1-based). */
 static unsigned char *dm32_talkgroup_wptr(unsigned number)
 {
@@ -2133,6 +2146,71 @@ static int dm32_parse_contact(int first_row, char *line)
     return 1;
 }
 
+static int dm32_parse_grouplist(int first_row, char *line)
+{
+    char num_s[64], name_s[64], mem_s[256];
+    (void)first_row;
+
+    int got = sscanf(line, "%63s %63s %255s", num_s, name_s, mem_s);
+    if (got < 2) {
+        return 0;
+    }
+    if (got < 3) {
+        mem_s[0] = '-';
+        mem_s[1] = 0;
+    }
+
+    unsigned num = (unsigned)atoi(num_s);
+    unsigned char *entry = dm32_rxgroup_wptr(num);
+    if (!entry) {
+        fprintf(stderr, "dm32: grouplist %u: no such slot.\n", num);
+        return 0;
+    }
+
+    /* Write name into entry. */
+    dm32_write_name(entry, name_s, DM32_RXGROUP_NAME_LEN);
+
+    /* Clear all contact ID slots (sentinel = 0x00). */
+    memset(entry + DM32_RXGROUP_CONTACT_OFF, 0,
+           DM32_RXGROUP_MAX_CONTACTS * 3u);
+
+    /* Parse comma-separated contact indices; look up DMR IDs. */
+    uint16_t indices[DM32_RXGROUP_MAX_CONTACTS];
+    unsigned cnt = dm32_parse_chanlist(mem_s, indices, DM32_RXGROUP_MAX_CONTACTS);
+
+    if (!dm32_tgs_parsed) {
+        dm32_parse_talkgroups();
+    }
+
+    unsigned written = 0;
+    for (unsigned i = 0; i < cnt; ++i) {
+        unsigned idx = indices[i];
+        if (idx == 0 || idx > dm32_ntgs) {
+            fprintf(stderr, "dm32: grouplist %u: contact index %u out of range.\n",
+                    num, idx);
+            continue;
+        }
+        uint32_t dmr_id = dm32_tgs[idx - 1].number;
+        uint32_t id_off = DM32_RXGROUP_CONTACT_OFF + written * 3u;
+        entry[id_off]     = (uint8_t)(dmr_id & 0xFF);
+        entry[id_off + 1] = (uint8_t)((dmr_id >> 8) & 0xFF);
+        entry[id_off + 2] = (uint8_t)((dmr_id >> 16) & 0xFF);
+        ++written;
+    }
+
+    /* Set bit (num-1) in the bitmask u32 LE at block base. */
+    unsigned char *blk = &radio_mem[dm32_rxgroup_block];
+    uint32_t bitmask = (uint32_t)blk[0] | ((uint32_t)blk[1] << 8) |
+                       ((uint32_t)blk[2] << 16) | ((uint32_t)blk[3] << 24);
+    bitmask |= (1u << (num - 1));
+    blk[0] = (unsigned char)(bitmask & 0xFF);
+    blk[1] = (unsigned char)((bitmask >> 8) & 0xFF);
+    blk[2] = (unsigned char)((bitmask >> 16) & 0xFF);
+    blk[3] = (unsigned char)((bitmask >> 24) & 0xFF);
+
+    return 1;
+}
+
 static void dm32_parse_parameter(radio_device_t *radio, char *param, char *value)
 {
     (void)radio;
@@ -2195,7 +2273,7 @@ static int dm32_parse_row(radio_device_t *radio, int table_id, int first_row, ch
     case 'Z': return dm32_parse_zone(first_row, line);
     case 'S': return dm32_parse_scanlist(first_row, line);
     case 'C': return dm32_parse_contact(first_row, line);
-    case 'G': return 0;  /* Grouplist: read-only, silently skip on parse */
+    case 'G': return dm32_parse_grouplist(first_row, line);
     }
     return 0;
 }
