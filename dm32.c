@@ -74,6 +74,19 @@
 #define DM32_SCANLIST_SIZE      57u
 #define LEN_SCANLIST_NAME       11u
 
+/* RX group list record (109 bytes, metadata 0x0F). */
+/* Block layout (NeonPlug parsers validated on live hw 2026-07-14):       */
+/*   0x00-0x03 bitmask u32 LE (bit i=1 → group i+1 active)               */
+/*   0x04-0x0F reserved; 0x10 flag (0x01)                                 */
+/*   entries at 0x11, each 109 bytes:                                     */
+/*     +0x00 name[11]; +0x0B 32 × 3-byte LE DMR IDs (0x00..=sentinel)    */
+#define DM32_RXGROUP_ENTRY_SIZE  109u
+#define DM32_RXGROUP_HDR         0x11u
+#define DM32_RXGROUP_NAME_LEN    11u
+#define DM32_RXGROUP_CONTACT_OFF 0x0Bu
+#define DM32_RXGROUP_MAX_CONTACTS 32u
+#define DM32_RXGROUP_MAX_GROUPS   32u
+
 /* Radio ID record (16 bytes, metadata 0x67). */
 #define DM32_RADIOID_SIZE       16u
 #define LEN_RADIOID_NAME        12u
@@ -851,6 +864,108 @@ static unsigned dm32_channel_tg_index(unsigned ch_index)
 }
 
 /*
+ * RX group list table.  Reads the metadata 0x0F block.
+ * Block layout (NeonPlug, validated on live hw 2026-07-14):
+ *   0x00-0x03  bitmask u32 LE  (bit i=1 → group i+1 active)
+ *   0x04-0x0F  reserved; 0x10 flag byte (0x01)
+ *   0x11+      entries, each DM32_RXGROUP_ENTRY_SIZE (109) bytes:
+ *               +0x00  name[11] null-term
+ *               +0x0B  up to 32 × 3-byte LE raw DMR IDs (sentinel = 0 or 0xFFFFFF)
+ * Member IDs are matched against the loaded talkgroup table; matched
+ * entries are printed as their 1-based contact index.  Unknown IDs are
+ * omitted (they aren't in the Contacts table so the user can't reference
+ * them by number anyway).
+ */
+static int dm32_have_rxgroups(void)
+{
+    if (!dm32_rxgroup_block) {
+        return 0;
+    }
+    const unsigned char *blk = dm32_mem_ptr(dm32_rxgroup_block, 4);
+    return blk && (blk[0] | blk[1] | blk[2] | blk[3]);
+}
+
+static void dm32_print_rxgroups(FILE *out, int verbose)
+{
+    if (!dm32_have_rxgroups()) {
+        return;
+    }
+    const unsigned char *blk = dm32_mem_ptr(dm32_rxgroup_block, DM32_PAGE_SIZE);
+    if (!blk) {
+        return;
+    }
+    uint32_t bitmask = (uint32_t)blk[0] | ((uint32_t)blk[1] << 8) |
+                       ((uint32_t)blk[2] << 16) | ((uint32_t)blk[3] << 24);
+    if (!bitmask) {
+        return;
+    }
+
+    if (!dm32_tgs_parsed) {
+        dm32_parse_talkgroups();
+    }
+
+    fprintf(out, "\n");
+    if (verbose) {
+        fprintf(out, "# Table of receive group lists.\n");
+        fprintf(out, "# 1) Grouplist number: 1-32\n");
+        fprintf(out, "# 2) Name: up to 11 characters, use '_' instead of space\n");
+        fprintf(out, "# 3) Members: contact numbers from the Contact table, comma-separated\n");
+        fprintf(out, "#\n");
+    }
+    fprintf(out, "Grouplist  Name        Members\n");
+
+    for (unsigned i = 0; i < DM32_RXGROUP_MAX_GROUPS; ++i) {
+        if (!(bitmask & (1u << i))) {
+            continue;
+        }
+        uint32_t off = DM32_RXGROUP_HDR + i * DM32_RXGROUP_ENTRY_SIZE;
+        if (off + DM32_RXGROUP_ENTRY_SIZE > DM32_PAGE_SIZE) {
+            break;
+        }
+        const unsigned char *entry = blk + off;
+
+        fprintf(out, "%5u     ", i + 1);
+        print_ascii(out, entry, DM32_RXGROUP_NAME_LEN, 1);
+        fprintf(out, "    ");
+
+        int first = 1;
+        for (unsigned slot = 0; slot < DM32_RXGROUP_MAX_CONTACTS; ++slot) {
+            uint32_t id_off = DM32_RXGROUP_CONTACT_OFF + slot * 3u;
+            if (id_off + 3u > DM32_RXGROUP_ENTRY_SIZE) {
+                break;
+            }
+            uint32_t dmr_id = (uint32_t)entry[id_off] |
+                              ((uint32_t)entry[id_off + 1] << 8) |
+                              ((uint32_t)entry[id_off + 2] << 16);
+            if (dmr_id == 0 || dmr_id == 0xFFFFFFu) {
+                break;
+            }
+            /* Find 1-based index in talkgroup table by DMR ID. */
+            unsigned tg_idx = 0;
+            for (unsigned t = 0; t < dm32_ntgs; ++t) {
+                if (dm32_tgs[t].number == dmr_id) {
+                    tg_idx = t + 1;
+                    break;
+                }
+            }
+            if (!tg_idx) {
+                /* ID not in Contact table; skip rather than emit invalid ref. */
+                continue;
+            }
+            if (!first) {
+                fprintf(out, ",");
+            }
+            fprintf(out, "%u", tg_idx);
+            first = 0;
+        }
+        if (first) {
+            fprintf(out, "-");
+        }
+        fprintf(out, "\n");
+    }
+}
+
+/*
  * Table of contacts (talkgroups), canonical dmrconfig format.
  *   1) Contact number
  *   2) Name (use '_' for space)
@@ -1384,6 +1499,7 @@ static void dm32_print_config(radio_device_t *radio, FILE *out, int verbose)
     //
     dm32_print_zones(out, verbose);
     dm32_print_scanlists(out, verbose);
+    dm32_print_rxgroups(out, verbose);
     dm32_print_contacts(out, verbose);
 
     //
@@ -2062,11 +2178,12 @@ static int dm32_parse_header(radio_device_t *radio, char *line)
     (void)radio;
     dm32_ensure_ready();
 
-    if (strncasecmp(line, "Digital", 7) == 0)  return 'D';
-    if (strncasecmp(line, "Analog", 6) == 0)   return 'A';
-    if (strncasecmp(line, "Zone", 4) == 0)     return 'Z';
-    if (strncasecmp(line, "Scanlist", 8) == 0) return 'S';
-    if (strncasecmp(line, "Contact", 7) == 0)  return 'C';
+    if (strncasecmp(line, "Digital", 7) == 0)   return 'D';
+    if (strncasecmp(line, "Analog", 6) == 0)    return 'A';
+    if (strncasecmp(line, "Zone", 4) == 0)      return 'Z';
+    if (strncasecmp(line, "Scanlist", 8) == 0)  return 'S';
+    if (strncasecmp(line, "Grouplist", 9) == 0) return 'G';
+    if (strncasecmp(line, "Contact", 7) == 0)   return 'C';
     return 0;
 }
 
@@ -2078,6 +2195,7 @@ static int dm32_parse_row(radio_device_t *radio, int table_id, int first_row, ch
     case 'Z': return dm32_parse_zone(first_row, line);
     case 'S': return dm32_parse_scanlist(first_row, line);
     case 'C': return dm32_parse_contact(first_row, line);
+    case 'G': return 0;  /* Grouplist: read-only, silently skip on parse */
     }
     return 0;
 }
