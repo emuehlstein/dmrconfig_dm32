@@ -1,6 +1,37 @@
-# DMRconfig
+# DMRconfig (DM-32UV fork) — ARCHIVED 2026-09-02
 
-## This work has been superceded by analysis performed by @infamy: https://github.com/infamy/DM32-Protocol-Spec
+> ## 🔴 This repository is archived and unmaintained. Use [qdmr](https://github.com/hmatuschek/qdmr) instead.
+>
+> **qdmr has supported the Baofeng DM-32UV natively since v0.15.0** (issue
+> [#577](https://github.com/hmatuschek/qdmr/issues/577), closed 2026-03-18). Upstream
+> ships `dm32uv_codeplug`, `_interface`, `_limits` and `_callsigndb`, plus a
+> `test/dm32uv_test.cc` regression suite that this fork never had. It offers both a GUI
+> and the `dmrconf` CLI, builds on macOS, and is actively maintained — v0.15.1
+> (2026-06-20) alone fixed DM32UV interface detection, CTCSS encode/decode, and
+> channel-encryption-key reference encoding.
+>
+> ### Why this fork stopped
+>
+> It was forked from [`OpenRTX/dmrconfig`](https://github.com/OpenRTX/dmrconfig), which
+> turns out to be a passive mirror rather than a development fork — GitHub's compare API
+> reports it **`identical`** to [`sergev/dmrconfig`](https://github.com/sergev/dmrconfig)
+> (0 ahead, 0 behind, same tip `f9bc00c` dated 2025-08-02). Both have been dormant since
+> August 2025. The `pr/dm32uv-upstream-onepr` branch here was prepared to upstream the
+> DM-32 work; there is no living upstream to receive it.
+>
+> ### What was built here
+>
+> Read path with V-frame metadata discovery; talkgroup and per-channel TX contact decode;
+> scan-list decode including priority channels; group-list decode and write; an
+> experimental write path; and a `0x04` SETTINGS-block skip that preserves radio
+> language/NVRAM. Kept for reference and for the protocol notes.
+>
+> Deeper protocol analysis lives in
+> [@infamy/DM32-Protocol-Spec](https://github.com/infamy/DM32-Protocol-Spec).
+>
+> ⚠️ One caveat carried forward: the DM-32UV scan-list membership cap is **15**, and the
+> `+0x0F` slot is *not* a member slot (hardware-verified on a DP570UV). qdmr's write path
+> has **not** been tested against that finding. Verify before writing scan lists to a radio.
 
 
 DMRconfig is a utility for programming digital radios via USB programming cable.
